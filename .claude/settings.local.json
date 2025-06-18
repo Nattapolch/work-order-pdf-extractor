@@ -1,6 +1,23 @@
 {
   "permissions": {
     "allow": [
+      "Bash(pip install:*)",
+      "Bash(python:*)",
+      "Bash(pip3 install:*)",
+      "Bash(brew install:*)",
+      "Bash(find:*)",
+      "Bash(mv:*)",
+      "Bash(pip3 show:*)",
+      "Bash(grep:*)",
+      "Bash(git init:*)",
+      "Bash(git branch:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(gh repo create:*)",
+      "Bash(gh repo edit:*)",
+      "Bash(git push:*)",
+      "Bash(git remote get-url:*)",
+      "Bash(git checkout:*)",
       "Bash(git merge:*)"
     ],
     "deny": []

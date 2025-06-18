@@ -41,6 +41,7 @@ class WorkOrderExtractor:
         # Configuration
         self.config = {
             'openai_api_key': '',
+            'selected_model': 'gpt-4.1-nano',  # Default model
             'crop_x1': 0,
             'crop_y1': 0,
             'crop_x2': 0.25,  # 1/4 of width
@@ -48,6 +49,38 @@ class WorkOrderExtractor:
             'pdf_folder': 'workOrderPDF',
             'ref_csv_file': 'workOrderRef/MCAN_work_inprogress.csv',
             'not_match_folder': 'not_match'
+        }
+        
+        # Model pricing (USD per million tokens) - 2025 rates
+        self.model_pricing = {
+            'gpt-4.1-nano': {
+                'input': 0.10,    # $0.10 per 1M input tokens
+                'output': 0.40,   # $0.40 per 1M output tokens
+                'description': 'Fastest and cheapest model with 1M context'
+            },
+            'gpt-4.1-mini': {
+                'input': 0.40,    # $0.40 per 1M input tokens
+                'output': 1.60,   # $1.60 per 1M output tokens
+                'description': 'Balanced performance and cost with 1M context'
+            },
+            'gpt-4.1': {
+                'input': 3.00,    # $3.00 per 1M input tokens (estimated)
+                'output': 12.00,  # $12.00 per 1M output tokens (estimated)
+                'description': 'Most capable model with 1M context'
+            }
+        }
+        
+        # Currency conversion (33 THB = 1 USD)
+        self.usd_to_thb = 33.0
+        
+        # Token and cost tracking
+        self.session_stats = {
+            'total_input_tokens': 0,
+            'total_output_tokens': 0,
+            'total_cost_usd': 0.0,
+            'total_cost_thb': 0.0,
+            'files_processed': 0,
+            'api_calls': 0
         }
         
         # Create directories if they don't exist
@@ -115,6 +148,59 @@ class WorkOrderExtractor:
         self.api_key_var = tk.StringVar()
         api_entry = ttk.Entry(api_frame, textvariable=self.api_key_var, show="*", width=50)
         api_entry.pack(fill=tk.X, pady=2)
+        
+        # Model selection section
+        model_frame = ttk.LabelFrame(settings_frame, text="Model Selection", padding=10)
+        model_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        ttk.Label(model_frame, text="OpenAI Model:").pack(anchor=tk.W)
+        self.model_var = tk.StringVar(value=self.config['selected_model'])
+        
+        model_combo_frame = ttk.Frame(model_frame)
+        model_combo_frame.pack(fill=tk.X, pady=2)
+        
+        self.model_combo = ttk.Combobox(model_combo_frame, textvariable=self.model_var, 
+                                       values=list(self.model_pricing.keys()), 
+                                       state="readonly", width=20)
+        self.model_combo.pack(side=tk.LEFT)
+        self.model_combo.bind('<<ComboboxSelected>>', self.on_model_changed)
+        
+        # Model description
+        self.model_desc_var = tk.StringVar()
+        self.update_model_description()
+        ttk.Label(model_frame, textvariable=self.model_desc_var, foreground="gray").pack(anchor=tk.W, pady=(5,0))
+        
+        # Cost tracking section
+        cost_frame = ttk.LabelFrame(settings_frame, text="Cost Tracking (Session)", padding=10)
+        cost_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        # Create cost display grid
+        cost_grid = ttk.Frame(cost_frame)
+        cost_grid.pack(fill=tk.X)
+        
+        ttk.Label(cost_grid, text="API Calls:").grid(row=0, column=0, sticky=tk.W, padx=5)
+        self.api_calls_var = tk.StringVar(value="0")
+        ttk.Label(cost_grid, textvariable=self.api_calls_var, foreground="blue").grid(row=0, column=1, sticky=tk.W, padx=5)
+        
+        ttk.Label(cost_grid, text="Input Tokens:").grid(row=0, column=2, sticky=tk.W, padx=5)
+        self.input_tokens_var = tk.StringVar(value="0")
+        ttk.Label(cost_grid, textvariable=self.input_tokens_var, foreground="green").grid(row=0, column=3, sticky=tk.W, padx=5)
+        
+        ttk.Label(cost_grid, text="Output Tokens:").grid(row=1, column=0, sticky=tk.W, padx=5)
+        self.output_tokens_var = tk.StringVar(value="0")
+        ttk.Label(cost_grid, textvariable=self.output_tokens_var, foreground="orange").grid(row=1, column=1, sticky=tk.W, padx=5)
+        
+        ttk.Label(cost_grid, text="Cost (USD):").grid(row=1, column=2, sticky=tk.W, padx=5)
+        self.cost_usd_var = tk.StringVar(value="$0.00")
+        ttk.Label(cost_grid, textvariable=self.cost_usd_var, foreground="red").grid(row=1, column=3, sticky=tk.W, padx=5)
+        
+        ttk.Label(cost_grid, text="Cost (THB):").grid(row=2, column=0, sticky=tk.W, padx=5)
+        self.cost_thb_var = tk.StringVar(value="฿0.00")
+        ttk.Label(cost_grid, textvariable=self.cost_thb_var, foreground="purple").grid(row=2, column=1, sticky=tk.W, padx=5)
+        
+        # Reset stats button
+        ttk.Button(cost_frame, text="Reset Session Stats", 
+                  command=self.reset_session_stats).pack(pady=5)
         
         # Crop coordinates section
         crop_frame = ttk.LabelFrame(settings_frame, text="Crop Coordinates (as fraction of PDF size)", padding=10)
@@ -187,6 +273,14 @@ class WorkOrderExtractor:
                                           maximum=100, length=300)
         self.progress_bar.pack(fill=tk.X, pady=5)
         
+        # Current session cost display
+        cost_summary_frame = ttk.Frame(status_frame)
+        cost_summary_frame.pack(fill=tk.X, pady=5)
+        
+        self.session_cost_var = tk.StringVar(value="Session Cost: $0.00 USD (฿0.00 THB)")
+        ttk.Label(cost_summary_frame, textvariable=self.session_cost_var, 
+                 foreground="purple", font=("Arial", 9, "bold")).pack(anchor=tk.W)
+        
         # Control buttons
         button_frame = ttk.Frame(process_frame)
         button_frame.pack(fill=tk.X, padx=10, pady=10)
@@ -238,6 +332,87 @@ class WorkOrderExtractor:
         self.x2_var.set(0.25)
         self.y2_var.set(0.25)
     
+    def on_model_changed(self, event=None):
+        """Handle model selection change"""
+        self.update_model_description()
+        self.log_message(f"Model changed to: {self.model_var.get()}")
+    
+    def update_model_description(self):
+        """Update model description text"""
+        model = self.model_var.get()
+        if model in self.model_pricing:
+            pricing = self.model_pricing[model]
+            desc = f"{pricing['description']} | Input: ${pricing['input']}/1M tokens | Output: ${pricing['output']}/1M tokens"
+            self.model_desc_var.set(desc)
+    
+    def reset_session_stats(self):
+        """Reset session statistics"""
+        self.session_stats = {
+            'total_input_tokens': 0,
+            'total_output_tokens': 0,
+            'total_cost_usd': 0.0,
+            'total_cost_thb': 0.0,
+            'files_processed': 0,
+            'api_calls': 0
+        }
+        self.update_cost_display()
+        self.log_message("Session statistics reset")
+    
+    def update_cost_display(self):
+        """Update cost tracking display"""
+        stats = self.session_stats
+        self.api_calls_var.set(str(stats['api_calls']))
+        self.input_tokens_var.set(f"{stats['total_input_tokens']:,}")
+        self.output_tokens_var.set(f"{stats['total_output_tokens']:,}")
+        self.cost_usd_var.set(f"${stats['total_cost_usd']:.4f}")
+        self.cost_thb_var.set(f"฿{stats['total_cost_thb']:.2f}")
+        
+        # Update session cost summary
+        if hasattr(self, 'session_cost_var'):
+            self.session_cost_var.set(f"Session Cost: ${stats['total_cost_usd']:.4f} USD (฿{stats['total_cost_thb']:.2f} THB) | {stats['api_calls']} API calls")
+    
+    def calculate_cost(self, input_tokens: int, output_tokens: int, model: str) -> dict:
+        """Calculate cost for token usage"""
+        if model not in self.model_pricing:
+            return {'usd': 0.0, 'thb': 0.0}
+        
+        pricing = self.model_pricing[model]
+        
+        # Calculate cost in USD
+        input_cost = (input_tokens / 1_000_000) * pricing['input']
+        output_cost = (output_tokens / 1_000_000) * pricing['output']
+        total_usd = input_cost + output_cost
+        
+        # Convert to THB
+        total_thb = total_usd * self.usd_to_thb
+        
+        return {
+            'usd': total_usd,
+            'thb': total_thb,
+            'input_cost': input_cost,
+            'output_cost': output_cost
+        }
+    
+    def track_api_usage(self, input_tokens: int, output_tokens: int, model: str):
+        """Track API usage and update costs"""
+        cost_info = self.calculate_cost(input_tokens, output_tokens, model)
+        
+        # Update session stats
+        self.session_stats['total_input_tokens'] += input_tokens
+        self.session_stats['total_output_tokens'] += output_tokens
+        self.session_stats['total_cost_usd'] += cost_info['usd']
+        self.session_stats['total_cost_thb'] += cost_info['thb']
+        self.session_stats['api_calls'] += 1
+        
+        # Update display
+        self.update_cost_display()
+        
+        # Log the usage
+        self.log_message(f"Token usage - Input: {input_tokens:,}, Output: {output_tokens:,}")
+        self.log_message(f"Cost - ${cost_info['usd']:.4f} USD (฿{cost_info['thb']:.2f} THB)")
+        
+        return cost_info
+    
     def browse_pdf_folder(self):
         """Browse for PDF folder"""
         folder = filedialog.askdirectory(title="Select PDF Folder")
@@ -263,12 +438,14 @@ class WorkOrderExtractor:
                     
                 # Update GUI variables
                 self.api_key_var.set(self.config.get('openai_api_key', ''))
+                self.model_var.set(self.config.get('selected_model', 'gpt-4.1-nano'))
                 self.x1_var.set(self.config.get('crop_x1', 0))
                 self.y1_var.set(self.config.get('crop_y1', 0))
                 self.x2_var.set(self.config.get('crop_x2', 0.25))
                 self.y2_var.set(self.config.get('crop_y2', 0.25))
                 self.pdf_folder_var.set(self.config.get('pdf_folder', 'workOrderPDF'))
                 self.csv_file_var.set(self.config.get('ref_csv_file', 'workOrderRef/MCAN_work_inprogress.csv'))
+                self.update_model_description()
         except Exception as e:
             self.logger.error(f"Error loading settings: {e}")
     
@@ -277,6 +454,7 @@ class WorkOrderExtractor:
         try:
             self.config.update({
                 'openai_api_key': self.api_key_var.get(),
+                'selected_model': self.model_var.get(),
                 'crop_x1': self.x1_var.get(),
                 'crop_y1': self.y1_var.get(),
                 'crop_x2': self.x2_var.get(),
@@ -453,15 +631,23 @@ class WorkOrderExtractor:
             
             # Test with a simple text prompt
             client = openai.OpenAI(api_key=api_key)
+            selected_model = self.model_var.get()
+            self.log_message(f"Testing API with model: {selected_model}")
+            
             response = client.chat.completions.create(
-                model="gpt-4o-mini",
+                model=selected_model,
                 messages=[{"role": "user", "content": "Say 'API connection successful'"}],
                 max_tokens=50
             )
             
+            # Track token usage for test
+            if hasattr(response, 'usage'):
+                usage = response.usage
+                self.track_api_usage(usage.prompt_tokens, usage.completion_tokens, selected_model)
+            
             result = response.choices[0].message.content
             self.log_message(f"API test successful! Response: {result}")
-            messagebox.showinfo("Success", f"API connection successful!\nResponse: {result}")
+            messagebox.showinfo("Success", f"API connection successful!\nModel: {selected_model}\nResponse: {result}")
             
         except Exception as e:
             self.logger.error(f"API test failed: {e}")
@@ -512,10 +698,14 @@ class WorkOrderExtractor:
             Return the response in JSON format with keys "work_order_number" and "equipment_number". 
             If you cannot find either value, set it to null."""
             
+            # Get selected model
+            selected_model = self.model_var.get()
+            self.log_message(f"Using model: {selected_model}")
+            
             # Call OpenAI API
             self.log_message("Calling OpenAI API...")
             response = client.chat.completions.create(
-                model="gpt-4o-mini",  # Using the smaller, faster model
+                model=selected_model,
                 messages=[
                     {
                         "role": "user",
@@ -533,9 +723,19 @@ class WorkOrderExtractor:
                 max_tokens=300
             )
             
+            # Extract token usage
+            usage = response.usage
+            input_tokens = usage.prompt_tokens
+            output_tokens = usage.completion_tokens
+            total_tokens = usage.total_tokens
+            
+            # Track API usage and costs
+            self.track_api_usage(input_tokens, output_tokens, selected_model)
+            
             # Parse response
             result_text = response.choices[0].message.content
             self.log_message(f"OpenAI response: {result_text}")
+            self.log_message(f"Total tokens used: {total_tokens:,} (Input: {input_tokens:,}, Output: {output_tokens:,})")
             
             # Try to parse as JSON
             try:
@@ -672,6 +872,7 @@ class WorkOrderExtractor:
         # Update config
         self.config.update({
             'openai_api_key': self.api_key_var.get(),
+            'selected_model': self.model_var.get(),
             'crop_x1': self.x1_var.get(),
             'crop_y1': self.y1_var.get(),
             'crop_x2': self.x2_var.get(),

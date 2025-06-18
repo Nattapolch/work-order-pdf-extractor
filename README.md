@@ -12,11 +12,13 @@ A Python GUI application that processes work order PDFs, extracts work order num
 ## Features
 
 - **PDF Processing**: Converts PDF files to images and crops specific regions
-- **AI Text Extraction**: Uses OpenAI GPT-4o-mini to extract work order numbers and equipment numbers
+- **AI Text Extraction**: Uses latest OpenAI GPT-4.1 models (Nano/Mini/Standard) to extract work order numbers and equipment numbers
+- **Multiple Model Support**: Choose between GPT-4.1 Nano (fastest/cheapest), Mini (balanced), or full GPT-4.1 (most capable)
+- **Real-time Cost Tracking**: Token counting and cost calculation in USD and Thai Baht (33 THB = 1 USD)
 - **Intelligent File Organization**: Renames matching files and moves non-matching files to a separate folder
 - **Configurable Crop Area**: User-defined cropping coordinates (default: top-left 1/4 of PDF)
 - **GUI Interface**: Easy-to-use tkinter-based interface with tabs for settings, processing, and logs
-- **Progress Tracking**: Real-time progress updates and detailed logging
+- **Progress Tracking**: Real-time progress updates, cost monitoring, and detailed logging
 
 ## Quick Start
 

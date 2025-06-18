@@ -36,16 +36,18 @@ class WorkOrderExtractor:
     def __init__(self, root):
         self.root = root
         self.root.title("Work Order PDF Extractor")
-        # Enhanced responsive sizing for large monitors and laptops
-        self.root.geometry("1400x900")
-        self.root.minsize(1200, 800)
+        # Modern responsive sizing - don't fill whole screen
+        width = 1200
+        height = 850
+        self.root.geometry(f"{width}x{height}")
+        self.root.minsize(1000, 700)
         
         # Center window on screen
         self.root.update_idletasks()
-        width = 1400
-        height = 900
-        x = (self.root.winfo_screenwidth() // 2) - (width // 2)
-        y = (self.root.winfo_screenheight() // 2) - (height // 2)
+        screen_width = self.root.winfo_screenwidth()
+        screen_height = self.root.winfo_screenheight()
+        x = (screen_width - width) // 2
+        y = (screen_height - height) // 2
         self.root.geometry(f"{width}x{height}+{x}+{y}")
         
         # Configure root grid weights for better responsiveness
@@ -137,166 +139,281 @@ class WorkOrderExtractor:
         self.logger = logging.getLogger(__name__)
     
     def create_widgets(self):
-        """Create the main GUI widgets"""
-        # Configure enhanced style for better appearance
+        """Create modern UI following Refactoring UI principles"""
+        # Modern design system
         style = ttk.Style()
-        style.theme_use('clam')  # Use modern theme
+        style.theme_use('clam')
         
-        # Configure custom colors and styles
-        style.configure('Title.TLabel', font=('Arial', 12, 'bold'), foreground='#2C3E50')
-        style.configure('Header.TLabel', font=('Arial', 10, 'bold'), foreground='#34495E')
-        style.configure('Info.TLabel', font=('Arial', 9), foreground='#5D6D7E')
-        style.configure('Success.TLabel', font=('Arial', 9, 'bold'), foreground='#27AE60')
-        style.configure('Error.TLabel', font=('Arial', 9, 'bold'), foreground='#E74C3C')
-        style.configure('Warning.TLabel', font=('Arial', 9, 'bold'), foreground='#F39C12')
-        style.configure('Primary.TLabel', font=('Arial', 9, 'bold'), foreground='#3498DB')
+        # Systematic color palette
+        self.colors = {
+            'primary': '#6366F1',        # Modern indigo
+            'success': '#10B981',        # Modern green
+            'error': '#EF4444',          # Modern red
+            'warning': '#F59E0B',        # Modern amber
+            'info': '#3B82F6',           # Modern blue
+            'neutral_900': '#111827',    # Almost black
+            'neutral_700': '#374151',    # Dark grey
+            'neutral_600': '#4B5563',    # Medium grey
+            'neutral_500': '#6B7280',    # Light grey
+            'neutral_300': '#D1D5DB',    # Very light
+            'neutral_100': '#F3F4F6',    # Background
+            'surface': '#FFFFFF',        # Pure white
+            'surface_secondary': '#F8FAFC' # Slight tint
+        }
         
-        # Main notebook for tabs with better padding
-        self.notebook = ttk.Notebook(self.root)
-        self.notebook.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+        # Typography system
+        self.fonts = {
+            'display': ('Inter', 24, 'bold'),
+            'title': ('Inter', 18, 'bold'),
+            'heading': ('Inter', 14, 'bold'),
+            'body': ('Inter', 13, 'normal'),
+            'small': ('Inter', 11, 'normal'),
+            'mono': ('JetBrains Mono', 12, 'normal')
+        }
         
-        # Settings tab
+        # Spacing system (8px base)
+        self.spacing = {'xs': 4, 'sm': 8, 'md': 16, 'lg': 24, 'xl': 32}
+        
+        # Configure systematic styles
+        style.configure('Display.TLabel', font=self.fonts['display'], foreground=self.colors['neutral_900'])
+        style.configure('Title.TLabel', font=self.fonts['title'], foreground=self.colors['neutral_700'])
+        style.configure('Heading.TLabel', font=self.fonts['heading'], foreground=self.colors['neutral_600'])
+        style.configure('Body.TLabel', font=self.fonts['body'], foreground=self.colors['neutral_600'])
+        style.configure('Small.TLabel', font=self.fonts['small'], foreground=self.colors['neutral_500'])
+        
+        style.configure('Success.TLabel', font=self.fonts['body'], foreground=self.colors['success'])
+        style.configure('Error.TLabel', font=self.fonts['body'], foreground=self.colors['error'])
+        style.configure('Warning.TLabel', font=self.fonts['body'], foreground=self.colors['warning'])
+        style.configure('Primary.TLabel', font=self.fonts['body'], foreground=self.colors['primary'])
+        
+        # Card and surface styles
+        style.configure('Card.TFrame', background=self.colors['surface'], relief='flat')
+        style.configure('Surface.TFrame', background=self.colors['surface_secondary'])
+        style.configure('Accent.TFrame', background=self.colors['primary'])
+        
+        # Main container with breathing room
+        main_container = ttk.Frame(self.root, style='Surface.TFrame')
+        main_container.pack(fill=tk.BOTH, expand=True, padx=self.spacing['xl'], pady=self.spacing['xl'])
+        
+        # Modern app header with visual hierarchy
+        self.create_app_header(main_container)
+        
+        # Modern notebook
+        self.notebook = ttk.Notebook(main_container)
+        self.notebook.pack(fill=tk.BOTH, expand=True)
+        
+        # Create modern tabs
         self.create_settings_tab()
-        
-        # Processing tab
         self.create_processing_tab()
-        
-        # Log tab
         self.create_log_tab()
     
+    def create_app_header(self, parent):
+        """Create modern app header with proper hierarchy"""
+        header_card = ttk.Frame(parent, style='Card.TFrame')
+        header_card.pack(fill=tk.X, pady=(0, self.spacing['lg']))
+        
+        # Accent border at top
+        accent_border = ttk.Frame(header_card, style='Accent.TFrame', height=4)
+        accent_border.pack(fill=tk.X)
+        
+        header_content = ttk.Frame(header_card)
+        header_content.pack(fill=tk.X, padx=self.spacing['lg'], pady=self.spacing['lg'])
+        
+        # Title with visual hierarchy
+        ttk.Label(header_content, text="Work Order PDF Extractor", style='Display.TLabel').pack(anchor=tk.W)
+        ttk.Label(header_content, text="AI-powered document processing with OpenAI", 
+                 style='Body.TLabel').pack(anchor=tk.W, pady=(self.spacing['xs'], 0))
+    
     def create_settings_tab(self):
-        """Create the settings configuration tab"""
-        settings_frame = ttk.Frame(self.notebook)
-        self.notebook.add(settings_frame, text="Settings")
+        """Create modern settings tab with card-based design"""
+        settings_container = ttk.Frame(self.notebook, style='Surface.TFrame')
+        self.notebook.add(settings_container, text="⚙️ Settings")
         
-        # API Key section
-        api_frame = ttk.LabelFrame(settings_frame, text="OpenAI API Configuration", padding=10)
-        api_frame.pack(fill=tk.X, padx=10, pady=5)
+        # Scrollable content container
+        canvas = tk.Canvas(settings_container, bg=self.colors['surface_secondary'], highlightthickness=0)
+        scrollbar = ttk.Scrollbar(settings_container, orient="vertical", command=canvas.yview)
+        scrollable_frame = ttk.Frame(canvas, style='Surface.TFrame')
         
-        ttk.Label(api_frame, text="API Key:").pack(anchor=tk.W)
+        scrollable_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        canvas.pack(side="left", fill="both", expand=True, padx=self.spacing['lg'], pady=self.spacing['lg'])
+        scrollbar.pack(side="right", fill="y")
+        
+        # Content with max width constraint
+        settings_frame = ttk.Frame(scrollable_frame, style='Surface.TFrame')
+        settings_frame.pack(fill=tk.X, padx=(0, self.spacing['lg']))
+        
+        # API Configuration Card
+        api_card = ttk.Frame(settings_frame, style='Card.TFrame')
+        api_card.pack(fill=tk.X, pady=(0, self.spacing['lg']))
+        
+        # Accent border
+        accent = ttk.Frame(api_card, style='Accent.TFrame', height=3)
+        accent.pack(fill=tk.X)
+        
+        api_content = ttk.Frame(api_card)
+        api_content.pack(fill=tk.X, padx=self.spacing['lg'], pady=self.spacing['lg'])
+        
+        ttk.Label(api_content, text="🔐 OpenAI API Configuration", style='Title.TLabel').pack(anchor=tk.W)
+        ttk.Label(api_content, text="Configure your OpenAI API credentials and model preferences", 
+                 style='Body.TLabel').pack(anchor=tk.W, pady=(self.spacing['xs'], self.spacing['md']))
+        
+        # API Key input
+        key_frame = ttk.Frame(api_content)
+        key_frame.pack(fill=tk.X, pady=(0, self.spacing['md']))
+        
+        ttk.Label(key_frame, text="API Key", style='Heading.TLabel').pack(anchor=tk.W, pady=(0, self.spacing['xs']))
         self.api_key_var = tk.StringVar()
-        api_entry = ttk.Entry(api_frame, textvariable=self.api_key_var, show="*", width=50)
-        api_entry.pack(fill=tk.X, pady=2)
+        api_entry = ttk.Entry(key_frame, textvariable=self.api_key_var, show="*", 
+                             width=60, font=self.fonts['mono'])
+        api_entry.pack(fill=tk.X, ipady=self.spacing['xs'])
         
-        # Model selection section
-        model_frame = ttk.LabelFrame(settings_frame, text="Model Selection", padding=10)
-        model_frame.pack(fill=tk.X, padx=10, pady=5)
+        # Model selection
+        model_frame = ttk.Frame(api_content)
+        model_frame.pack(fill=tk.X)
         
-        ttk.Label(model_frame, text="OpenAI Model:").pack(anchor=tk.W)
+        ttk.Label(model_frame, text="Model Selection", style='Heading.TLabel').pack(anchor=tk.W, pady=(0, self.spacing['xs']))
+        
         self.model_var = tk.StringVar(value=self.config['selected_model'])
-        
-        model_combo_frame = ttk.Frame(model_frame)
-        model_combo_frame.pack(fill=tk.X, pady=2)
-        
-        self.model_combo = ttk.Combobox(model_combo_frame, textvariable=self.model_var, 
-                                       values=list(self.model_pricing.keys()), 
-                                       state="readonly", width=20)
-        self.model_combo.pack(side=tk.LEFT)
+        self.model_combo = ttk.Combobox(model_frame, textvariable=self.model_var,
+                                       values=list(self.model_pricing.keys()),
+                                       state="readonly", width=30, font=self.fonts['body'])
+        self.model_combo.pack(anchor=tk.W, ipady=self.spacing['xs'])
         self.model_combo.bind('<<ComboboxSelected>>', self.on_model_changed)
         
-        # Model description with enhanced styling
+        # Model description
         self.model_desc_var = tk.StringVar()
         self.update_model_description()
-        desc_label = ttk.Label(model_frame, textvariable=self.model_desc_var, style='Info.TLabel')
-        desc_label.pack(anchor=tk.W, pady=(5,0))
+        ttk.Label(model_frame, textvariable=self.model_desc_var, style='Small.TLabel').pack(anchor=tk.W, pady=(self.spacing['xs'], 0))
         
-        # Cost tracking section
-        cost_frame = ttk.LabelFrame(settings_frame, text="Cost Tracking (Session)", padding=15)
-        cost_frame.pack(fill=tk.X, padx=10, pady=5)
+        # Cost Tracking Card
+        cost_card = ttk.Frame(settings_frame, style='Card.TFrame')
+        cost_card.pack(fill=tk.X, pady=(0, self.spacing['lg']))
         
-        # Create enhanced cost display grid with better spacing and responsive design
-        cost_grid = ttk.Frame(cost_frame)
-        cost_grid.pack(fill=tk.X, padx=5, pady=5)
+        cost_content = ttk.Frame(cost_card)
+        cost_content.pack(fill=tk.X, padx=self.spacing['lg'], pady=self.spacing['lg'])
         
-        # Configure grid columns to be responsive for large screens
-        for i in range(6):
-            cost_grid.grid_columnconfigure(i, weight=1)
+        # Header with reset button
+        header_frame = ttk.Frame(cost_content)
+        header_frame.pack(fill=tk.X, pady=(0, self.spacing['md']))
         
-        # First row - API calls and tokens
-        ttk.Label(cost_grid, text="API Calls:", style='Header.TLabel').grid(row=0, column=0, sticky=tk.W, padx=8, pady=3)
-        self.api_calls_var = tk.StringVar(value="0")
-        ttk.Label(cost_grid, textvariable=self.api_calls_var, style='Primary.TLabel').grid(row=0, column=1, sticky=tk.W, padx=8, pady=3)
+        ttk.Label(header_frame, text="📊 Session Cost Tracking", style='Title.TLabel').pack(side=tk.LEFT)
+        reset_btn = ttk.Button(header_frame, text="🔄 Reset", command=self.reset_session_stats, width=12)
+        reset_btn.pack(side=tk.RIGHT)
         
-        ttk.Label(cost_grid, text="Input Tokens:", style='Header.TLabel').grid(row=0, column=2, sticky=tk.W, padx=8, pady=3)
-        self.input_tokens_var = tk.StringVar(value="0")
-        ttk.Label(cost_grid, textvariable=self.input_tokens_var, style='Success.TLabel').grid(row=0, column=3, sticky=tk.W, padx=8, pady=3)
+        # Modern metrics grid
+        metrics_grid = ttk.Frame(cost_content)
+        metrics_grid.pack(fill=tk.X)
         
-        ttk.Label(cost_grid, text="Output Tokens:", style='Header.TLabel').grid(row=0, column=4, sticky=tk.W, padx=8, pady=3)
-        self.output_tokens_var = tk.StringVar(value="0")
-        ttk.Label(cost_grid, textvariable=self.output_tokens_var, style='Warning.TLabel').grid(row=0, column=5, sticky=tk.W, padx=8, pady=3)
+        for i in range(3):
+            metrics_grid.grid_columnconfigure(i, weight=1)
         
-        # Second row - costs
-        ttk.Label(cost_grid, text="Cost (USD):", style='Header.TLabel').grid(row=1, column=0, sticky=tk.W, padx=8, pady=3)
-        self.cost_usd_var = tk.StringVar(value="$0.00")
-        ttk.Label(cost_grid, textvariable=self.cost_usd_var, style='Error.TLabel').grid(row=1, column=1, sticky=tk.W, padx=8, pady=3)
+        # Create metric cards
+        self.create_metric_card(metrics_grid, "API Calls", "api_calls_var", "0", self.colors['info'], 0, 0)
+        self.create_metric_card(metrics_grid, "Input Tokens", "input_tokens_var", "0", self.colors['success'], 0, 1)
+        self.create_metric_card(metrics_grid, "Output Tokens", "output_tokens_var", "0", self.colors['warning'], 0, 2)
         
-        ttk.Label(cost_grid, text="Cost (THB):", style='Header.TLabel').grid(row=1, column=2, sticky=tk.W, padx=8, pady=3)
-        self.cost_thb_var = tk.StringVar(value="฿0.00")
-        ttk.Label(cost_grid, textvariable=self.cost_thb_var, font=("Arial", 9, "bold"), foreground="#8E44AD").grid(row=1, column=3, sticky=tk.W, padx=8, pady=3)
+        self.create_metric_card(metrics_grid, "Cost (USD)", "cost_usd_var", "$0.00", self.colors['error'], 1, 0)
+        self.create_metric_card(metrics_grid, "Cost (THB)", "cost_thb_var", "฿0.00", self.colors['primary'], 1, 1)
         
-        # Reset stats button with improved styling
-        reset_stats_btn = ttk.Button(cost_frame, text="🔄 Reset Session Stats", 
-                                    command=self.reset_session_stats)
-        reset_stats_btn.pack(pady=8)
+        # Crop Coordinates Card
+        crop_card = ttk.Frame(settings_frame, style='Card.TFrame')
+        crop_card.pack(fill=tk.X, pady=(0, self.spacing['lg']))
         
-        # Crop coordinates section with improved layout
-        crop_frame = ttk.LabelFrame(settings_frame, text="Crop Coordinates (as fraction of PDF size)", padding=15)
-        crop_frame.pack(fill=tk.X, padx=10, pady=5)
+        crop_content = ttk.Frame(crop_card)
+        crop_content.pack(fill=tk.X, padx=self.spacing['lg'], pady=self.spacing['lg'])
         
-        # Enhanced coordinate inputs with validation
-        coord_frame = ttk.Frame(crop_frame)
-        coord_frame.pack(fill=tk.X, padx=10, pady=5)
+        ttk.Label(crop_content, text="✂️ Crop Coordinates", style='Title.TLabel').pack(anchor=tk.W)
+        ttk.Label(crop_content, text="Define the area to extract from PDFs (as fraction of page size)", 
+                 style='Body.TLabel').pack(anchor=tk.W, pady=(self.spacing['xs'], self.spacing['md']))
         
-        # Configure grid for better responsiveness on large screens
-        for i in range(8):
-            coord_frame.grid_columnconfigure(i, weight=1)
+        # Coordinates grid
+        coords_grid = ttk.Frame(crop_content)
+        coords_grid.pack(fill=tk.X, pady=(0, self.spacing['md']))
         
-        # Enhanced coordinate inputs with better layout for large screens
-        ttk.Label(coord_frame, text="X1 (left):", style='Header.TLabel').grid(row=0, column=0, sticky=tk.W, padx=8, pady=5)
-        self.x1_var = tk.DoubleVar(value=self.config['crop_x1'])
-        ttk.Entry(coord_frame, textvariable=self.x1_var, width=15, font=("Arial", 10)).grid(row=0, column=1, padx=8, pady=5, sticky=tk.EW)
+        for i in range(4):
+            coords_grid.grid_columnconfigure(i, weight=1)
         
-        ttk.Label(coord_frame, text="Y1 (top):", style='Header.TLabel').grid(row=0, column=2, sticky=tk.W, padx=8, pady=5)
-        self.y1_var = tk.DoubleVar(value=self.config['crop_y1'])
-        ttk.Entry(coord_frame, textvariable=self.y1_var, width=15, font=("Arial", 10)).grid(row=0, column=3, padx=8, pady=5, sticky=tk.EW)
+        # Coordinate inputs
+        self.create_coord_input(coords_grid, "X1 (Left)", "x1_var", self.config['crop_x1'], 0, 0)
+        self.create_coord_input(coords_grid, "Y1 (Top)", "y1_var", self.config['crop_y1'], 0, 1)
+        self.create_coord_input(coords_grid, "X2 (Right)", "x2_var", self.config['crop_x2'], 0, 2)
+        self.create_coord_input(coords_grid, "Y2 (Bottom)", "y2_var", self.config['crop_y2'], 0, 3)
         
-        ttk.Label(coord_frame, text="X2 (right):", style='Header.TLabel').grid(row=0, column=4, sticky=tk.W, padx=8, pady=5)
-        self.x2_var = tk.DoubleVar(value=self.config['crop_x2'])
-        ttk.Entry(coord_frame, textvariable=self.x2_var, width=15, font=("Arial", 10)).grid(row=0, column=5, padx=8, pady=5, sticky=tk.EW)
+        # Reset button
+        ttk.Button(crop_content, text="🔄 Reset to Default", command=self.reset_crop_default, width=20).pack()
         
-        ttk.Label(coord_frame, text="Y2 (bottom):", style='Header.TLabel').grid(row=0, column=6, sticky=tk.W, padx=8, pady=5)
-        self.y2_var = tk.DoubleVar(value=self.config['crop_y2'])
-        ttk.Entry(coord_frame, textvariable=self.y2_var, width=15, font=("Arial", 10)).grid(row=0, column=7, padx=8, pady=5, sticky=tk.EW)
+        # File Paths Card
+        paths_card = ttk.Frame(settings_frame, style='Card.TFrame')
+        paths_card.pack(fill=tk.X, pady=(0, self.spacing['lg']))
         
-        # Reset to default button
-        reset_btn = ttk.Button(crop_frame, text="🔄 Reset to Default (1/4 size)", 
-                              command=self.reset_crop_default)
-        reset_btn.pack(pady=8)
+        paths_content = ttk.Frame(paths_card)
+        paths_content.pack(fill=tk.X, padx=self.spacing['lg'], pady=self.spacing['lg'])
         
-        # File paths section with better spacing
-        paths_frame = ttk.LabelFrame(settings_frame, text="File Paths", padding=15)
-        paths_frame.pack(fill=tk.X, padx=10, pady=5)
+        ttk.Label(paths_content, text="📁 File Paths", style='Title.TLabel').pack(anchor=tk.W)
+        ttk.Label(paths_content, text="Configure input and output directories", 
+                 style='Body.TLabel').pack(anchor=tk.W, pady=(self.spacing['xs'], self.spacing['md']))
         
-        # Enhanced PDF folder section
-        ttk.Label(paths_frame, text="📁 PDF Folder:", style='Header.TLabel').pack(anchor=tk.W, pady=(5,2))
-        self.pdf_folder_var = tk.StringVar(value=self.config['pdf_folder'])
-        pdf_frame = ttk.Frame(paths_frame)
-        pdf_frame.pack(fill=tk.X, pady=5)
-        ttk.Entry(pdf_frame, textvariable=self.pdf_folder_var, width=60, font=("Arial", 10)).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0,5))
-        ttk.Button(pdf_frame, text="📂 Browse", command=self.browse_pdf_folder, width=12).pack(side=tk.RIGHT)
+        # PDF folder
+        self.create_path_input(paths_content, "PDF Folder", "pdf_folder_var", 
+                              self.config['pdf_folder'], self.browse_pdf_folder)
         
-        # Enhanced CSV reference file section
-        ttk.Label(paths_frame, text="📄 Reference CSV File:", style='Header.TLabel').pack(anchor=tk.W, pady=(15,2))
-        self.csv_file_var = tk.StringVar(value=self.config['ref_csv_file'])
-        csv_frame = ttk.Frame(paths_frame)
-        csv_frame.pack(fill=tk.X, pady=5)
-        ttk.Entry(csv_frame, textvariable=self.csv_file_var, width=60, font=("Arial", 10)).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0,5))
-        ttk.Button(csv_frame, text="📂 Browse", command=self.browse_csv_file, width=12).pack(side=tk.RIGHT)
+        # CSV file
+        self.create_path_input(paths_content, "Reference CSV File", "csv_file_var", 
+                              self.config['ref_csv_file'], self.browse_csv_file)
         
-        # Enhanced save settings button
-        save_btn = ttk.Button(settings_frame, text="💾 Save Settings", 
-                             command=self.save_settings, width=20)
-        save_btn.pack(pady=20)
+        # Save button
+        save_frame = ttk.Frame(paths_content)
+        save_frame.pack(fill=tk.X, pady=(self.spacing['md'], 0))
+        
+        ttk.Button(save_frame, text="💾 Save Settings", command=self.save_settings, width=20).pack()
+        
+    
+    def create_metric_card(self, parent, label, var_name, initial_value, color, row, col):
+        """Create individual metric card"""
+        metric_frame = ttk.Frame(parent, style='Surface.TFrame')
+        metric_frame.grid(row=row, column=col, padx=self.spacing['xs'], pady=self.spacing['xs'], sticky="ew")
+        
+        metric_content = ttk.Frame(metric_frame)
+        metric_content.pack(padx=self.spacing['sm'], pady=self.spacing['sm'])
+        
+        ttk.Label(metric_content, text=label, style='Small.TLabel').pack()
+        
+        setattr(self, var_name, tk.StringVar(value=initial_value))
+        value_label = ttk.Label(metric_content, textvariable=getattr(self, var_name), style='Heading.TLabel')
+        value_label.configure(foreground=color)
+        value_label.pack(pady=(self.spacing['xs'], 0))
+    
+    def create_coord_input(self, parent, label, var_name, initial_value, row, col):
+        """Create coordinate input field"""
+        coord_frame = ttk.Frame(parent)
+        coord_frame.grid(row=row, column=col, padx=self.spacing['xs'], sticky="ew")
+        
+        ttk.Label(coord_frame, text=label, style='Small.TLabel').pack(anchor=tk.W)
+        
+        setattr(self, var_name, tk.DoubleVar(value=initial_value))
+        entry = ttk.Entry(coord_frame, textvariable=getattr(self, var_name), 
+                         width=12, font=self.fonts['mono'])
+        entry.pack(fill=tk.X, ipady=self.spacing['xs'], pady=(self.spacing['xs'], 0))
+    
+    def create_path_input(self, parent, label, var_name, initial_value, browse_command):
+        """Create path input with browse button"""
+        path_frame = ttk.Frame(parent)
+        path_frame.pack(fill=tk.X, pady=(0, self.spacing['md']))
+        
+        ttk.Label(path_frame, text=label, style='Heading.TLabel').pack(anchor=tk.W, pady=(0, self.spacing['xs']))
+        
+        input_frame = ttk.Frame(path_frame)
+        input_frame.pack(fill=tk.X)
+        
+        setattr(self, var_name, tk.StringVar(value=initial_value))
+        entry = ttk.Entry(input_frame, textvariable=getattr(self, var_name), 
+                         font=self.fonts['mono'])
+        entry.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=self.spacing['xs'])
+        
+        ttk.Button(input_frame, text="📂 Browse", command=browse_command, width=12).pack(side=tk.RIGHT, padx=(self.spacing['xs'], 0))
     
     def create_processing_tab(self):
         """Create the main processing tab"""

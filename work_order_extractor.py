@@ -1316,7 +1316,7 @@ class WorkOrderExtractor:
             messagebox.showerror("Error", f"Failed to apply crop settings: {e}")
     
     def pdf_to_image(self, pdf_path: str) -> Optional[Image.Image]:
-        """Convert first page of PDF to PIL Image with performance optimization"""
+        """Convert first page of PDF to PIL Image with performance optimization and cropping"""
         try:
             # Try with pdf2image first with optimized settings
             pages = convert_from_path(
@@ -1327,7 +1327,18 @@ class WorkOrderExtractor:
                 thread_count=2  # Use multiple threads for conversion
             )
             if pages:
-                return pages[0]
+                image = pages[0]
+                
+                # Apply crop if configured
+                if hasattr(self, 'config') and 'crop_x1' in self.config:
+                    width, height = image.size
+                    x1 = int(width * self.config['crop_x1'])
+                    y1 = int(height * self.config['crop_y1'])
+                    x2 = int(width * self.config['crop_x2'])
+                    y2 = int(height * self.config['crop_y2'])
+                    image = image.crop((x1, y1, x2, y2))
+                
+                return image
         except Exception as e:
             self.logger.warning(f"pdf2image failed for {pdf_path}: {e}")
             
@@ -1342,7 +1353,18 @@ class WorkOrderExtractor:
                 doc.close()
                 
                 from io import BytesIO
-                return Image.open(BytesIO(img_data))
+                image = Image.open(BytesIO(img_data))
+                
+                # Apply crop if configured
+                if hasattr(self, 'config') and 'crop_x1' in self.config:
+                    width, height = image.size
+                    x1 = int(width * self.config['crop_x1'])
+                    y1 = int(height * self.config['crop_y1'])
+                    x2 = int(width * self.config['crop_x2'])
+                    y2 = int(height * self.config['crop_y2'])
+                    image = image.crop((x1, y1, x2, y2))
+                
+                return image
             except Exception as e:
                 self.logger.error(f"PyMuPDF fallback failed for {pdf_path}: {e}")
         

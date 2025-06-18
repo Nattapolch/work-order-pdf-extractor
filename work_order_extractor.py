@@ -107,7 +107,9 @@ class WorkOrderExtractor:
             'files_processed': 0,
             'api_calls': 0,
             'successful_files': 0,
-            'failed_files': 0
+            'failed_files': 0,
+            'matched_files': 0,      # Files with work orders found in reference CSV
+            'not_matched_files': 0   # Files moved to not_match folder
         }
         
         # Create directories if they don't exist
@@ -497,6 +499,19 @@ class WorkOrderExtractor:
         ttk.Label(results_grid, textvariable=self.fail_count_var, 
                  foreground="#E74C3C", font=("Arial", 9, "bold")).grid(row=0, column=4, sticky=tk.W, padx=5)
         
+        # Add Match/Not Match statistics on second row
+        ttk.Label(results_grid, text="Matching:", font=("Arial", 10, "bold")).grid(row=1, column=0, sticky=tk.W, padx=5, pady=(5,0))
+        
+        ttk.Label(results_grid, text="Matched:", font=("Arial", 9)).grid(row=1, column=1, sticky=tk.W, padx=10, pady=(5,0))
+        self.matched_count_var = tk.StringVar(value="0")
+        ttk.Label(results_grid, textvariable=self.matched_count_var, 
+                 foreground="#27AE60", font=("Arial", 9, "bold")).grid(row=1, column=2, sticky=tk.W, padx=5, pady=(5,0))
+        
+        ttk.Label(results_grid, text="Not Matched:", font=("Arial", 9)).grid(row=1, column=3, sticky=tk.W, padx=10, pady=(5,0))
+        self.not_matched_count_var = tk.StringVar(value="0")
+        ttk.Label(results_grid, textvariable=self.not_matched_count_var, 
+                 foreground="#F39C12", font=("Arial", 9, "bold")).grid(row=1, column=4, sticky=tk.W, padx=5, pady=(5,0))
+        
         # Enhanced control buttons with improved styling
         button_frame = ttk.Frame(process_frame)
         button_frame.pack(fill=tk.X, padx=15, pady=20)
@@ -739,7 +754,9 @@ class WorkOrderExtractor:
             'files_processed': 0,
             'api_calls': 0,
             'successful_files': 0,
-            'failed_files': 0
+            'failed_files': 0,
+            'matched_files': 0,
+            'not_matched_files': 0
         }
         self.update_cost_display()
         self.update_results_display()
@@ -804,11 +821,15 @@ class WorkOrderExtractor:
         return cost_info
     
     def update_results_display(self):
-        """Update success/fail results display"""
+        """Update success/fail and match/not match results display"""
         if hasattr(self, 'success_count_var'):
             self.success_count_var.set(str(self.session_stats['successful_files']))
         if hasattr(self, 'fail_count_var'):
             self.fail_count_var.set(str(self.session_stats['failed_files']))
+        if hasattr(self, 'matched_count_var'):
+            self.matched_count_var.set(str(self.session_stats['matched_files']))
+        if hasattr(self, 'not_matched_count_var'):
+            self.not_matched_count_var.set(str(self.session_stats['not_matched_files']))
         if hasattr(self, 'total_count_var'):
             total = self.session_stats['successful_files'] + self.session_stats['failed_files']
             self.total_count_var.set(str(total))
@@ -1296,13 +1317,10 @@ class WorkOrderExtractor:
                 self.x2_var.set(rel_x2)
                 self.y2_var.set(rel_y2)
             
-            # Save to config file
+            # Save to config file (keep API key)
             try:
-                config_copy = self.config.copy()
-                # Remove non-serializable items
-                config_copy.pop('openai_api_key', None)
                 with open('config.json', 'w') as f:
-                    json.dump(config_copy, f, indent=2)
+                    json.dump(self.config, f, indent=2)
                 self.log_message("Crop settings saved to config.json")
             except Exception as e:
                 self.log_message(f"Warning: Could not save to config.json: {e}")
@@ -1634,10 +1652,10 @@ If not found, use null for that field."""
                 try:
                     os.rename(pdf_path, new_path)
                     self.log_message(f"Renamed to: {new_filename}")
-                    return True
+                    return (True, 'matched')  # Success and matched
                 except Exception as e:
                     self.log_message(f"Failed to rename {filename}: {e}")
-                    return False
+                    return (False, 'error')  # Failed
             else:
                 # No match - move to not_match folder
                 # Ensure not_match folder exists
@@ -1646,15 +1664,15 @@ If not found, use null for that field."""
                 try:
                     shutil.move(pdf_path, not_match_path)
                     self.log_message(f"Moved to not_match folder: {filename}")
-                    return True
+                    return (True, 'not_matched')  # Success but not matched
                 except Exception as e:
                     self.log_message(f"Failed to move {filename} to not_match: {e}")
-                    return False
+                    return (False, 'error')  # Failed
                     
         except Exception as e:
             self.logger.error(f"Error processing {filename}: {e}")
             self.log_message(f"Error processing {filename}: {e}")
-            return False
+            return (False, 'error')
     
     def start_processing(self):
         """Start processing all PDF files"""
@@ -1738,12 +1756,27 @@ If not found, use null for that field."""
                     
                     try:
                         result = future.result()
-                        if result:
-                            successful += 1
-                            self.session_stats['successful_files'] += 1
+                        if isinstance(result, tuple):
+                            success, match_type = result
+                            if success:
+                                successful += 1
+                                self.session_stats['successful_files'] += 1
+                                # Track match statistics
+                                if match_type == 'matched':
+                                    self.session_stats['matched_files'] += 1
+                                elif match_type == 'not_matched':
+                                    self.session_stats['not_matched_files'] += 1
+                            else:
+                                failed += 1
+                                self.session_stats['failed_files'] += 1
                         else:
-                            failed += 1
-                            self.session_stats['failed_files'] += 1
+                            # Handle legacy boolean return value
+                            if result:
+                                successful += 1
+                                self.session_stats['successful_files'] += 1
+                            else:
+                                failed += 1
+                                self.session_stats['failed_files'] += 1
                     except Exception as e:
                         self.logger.error(f"Error processing {filename}: {e}")
                         self.log_message(f"Error processing {filename}: {e}")

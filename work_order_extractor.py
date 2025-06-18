@@ -1316,60 +1316,9 @@ class WorkOrderExtractor:
             messagebox.showerror("Error", f"Failed to apply crop settings: {e}")
     
     def pdf_to_image(self, pdf_path: str) -> Optional[Image.Image]:
-        """Convert first page of PDF to PIL Image with performance optimization and cropping"""
-        try:
-            # Try with pdf2image first with optimized settings
-            pages = convert_from_path(
-                pdf_path, 
-                first_page=1, 
-                last_page=1, 
-                dpi=150,  # Reduced DPI for faster processing
-                thread_count=2  # Use multiple threads for conversion
-            )
-            if pages:
-                image = pages[0]
-                
-                # Apply crop if configured
-                if hasattr(self, 'config') and 'crop_x1' in self.config:
-                    width, height = image.size
-                    x1 = int(width * self.config['crop_x1'])
-                    y1 = int(height * self.config['crop_y1'])
-                    x2 = int(width * self.config['crop_x2'])
-                    y2 = int(height * self.config['crop_y2'])
-                    image = image.crop((x1, y1, x2, y2))
-                
-                return image
-        except Exception as e:
-            self.logger.warning(f"pdf2image failed for {pdf_path}: {e}")
-            
-        if HAS_PYMUPDF:
-            try:
-                # Fallback to PyMuPDF with optimized settings
-                doc = fitz.open(pdf_path)
-                page = doc[0]
-                mat = fitz.Matrix(1.5, 1.5)  # Reduced zoom for faster processing
-                pix = page.get_pixmap(matrix=mat)
-                img_data = pix.tobytes("ppm")
-                doc.close()
-                
-                from io import BytesIO
-                image = Image.open(BytesIO(img_data))
-                
-                # Apply crop if configured
-                if hasattr(self, 'config') and 'crop_x1' in self.config:
-                    width, height = image.size
-                    x1 = int(width * self.config['crop_x1'])
-                    y1 = int(height * self.config['crop_y1'])
-                    x2 = int(width * self.config['crop_x2'])
-                    y2 = int(height * self.config['crop_y2'])
-                    image = image.crop((x1, y1, x2, y2))
-                
-                return image
-            except Exception as e:
-                self.logger.error(f"PyMuPDF fallback failed for {pdf_path}: {e}")
-        
-        self.logger.error(f"Failed to convert PDF to image: {pdf_path}")
-        return None
+        """Convert first page of PDF to PIL Image WITHOUT cropping (to match manual crop coordinate system)"""
+        # Use the same method as manual crop to ensure coordinate system consistency
+        return self.pdf_to_image_full(pdf_path)
     
     def crop_image(self, image: Image.Image, x1: float, y1: float, x2: float, y2: float) -> Image.Image:
         """Crop image using relative coordinates (0-1)"""

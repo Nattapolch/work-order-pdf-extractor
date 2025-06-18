@@ -487,6 +487,11 @@ class WorkOrderExtractor:
                                     command=self.stop_processing, state=tk.DISABLED, width=20)
         self.stop_button.grid(row=0, column=1, padx=10, pady=8, sticky=tk.EW)
         
+        # Open PDF Folder button
+        self.open_folder_button = ttk.Button(button_grid, text="📂 Open PDF Folder", 
+                                           command=self.open_pdf_folder, width=20)
+        self.open_folder_button.grid(row=0, column=2, padx=10, pady=8, sticky=tk.EW)
+        
         # Preview section with better styling
         preview_frame = ttk.LabelFrame(process_frame, text="Preview & Testing", padding=15)
         preview_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
@@ -657,6 +662,45 @@ class WorkOrderExtractor:
         )
         if file:
             self.csv_file_var.set(file)
+    
+    def open_pdf_folder(self):
+        """Open the PDF folder in the system file explorer"""
+        import subprocess
+        import platform
+        
+        folder_path = self.pdf_folder_var.get() if hasattr(self, 'pdf_folder_var') else self.config['pdf_folder']
+        
+        # Ensure the folder exists
+        if not os.path.exists(folder_path):
+            messagebox.showwarning("Folder Not Found", 
+                                 f"The PDF folder '{folder_path}' does not exist.\n\n"
+                                 f"Please check the folder path in Settings or create the folder.")
+            self.log_message(f"PDF folder not found: {folder_path}")
+            return
+        
+        try:
+            # Get the absolute path
+            folder_path = os.path.abspath(folder_path)
+            
+            # Open folder based on operating system
+            system = platform.system()
+            if system == "Darwin":  # macOS
+                subprocess.run(["open", folder_path])
+            elif system == "Windows":  # Windows
+                subprocess.run(["explorer", folder_path])
+            elif system == "Linux":  # Linux
+                subprocess.run(["xdg-open", folder_path])
+            else:
+                messagebox.showinfo("Unsupported OS", 
+                                  f"Cannot open folder automatically on {system}.\n"
+                                  f"Please navigate to: {folder_path}")
+                return
+            
+            self.log_message(f"Opened PDF folder: {folder_path}")
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to open folder:\n{e}")
+            self.log_message(f"Error opening PDF folder: {e}")
     
     def load_settings(self):
         """Load settings from config file"""

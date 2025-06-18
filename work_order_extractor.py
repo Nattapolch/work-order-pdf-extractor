@@ -73,30 +73,20 @@ class WorkOrderExtractor:
         
         # Model pricing (USD per million tokens) - 2025 rates
         self.model_pricing = {
-            'gpt-4o-mini': {
-                'input': 0.15,    # $0.15 per 1M input tokens
-                'output': 0.60,   # $0.60 per 1M output tokens
-                'description': 'Fast and affordable vision model'
-            },
-            'gpt-4o': {
-                'input': 2.50,    # $2.50 per 1M input tokens
-                'output': 10.00,  # $10.00 per 1M output tokens
-                'description': 'Advanced vision and text model'
-            },
             'gpt-4.1-nano': {
-                'input': 0.10,    # Legacy model - will be converted to gpt-4o-mini
-                'output': 0.40,
-                'description': 'Legacy model (converted to gpt-4o-mini)'
+                'input': 0.10,    # $0.10 per 1M input tokens
+                'output': 0.40,   # $0.40 per 1M output tokens
+                'description': 'Fastest and cheapest model with 1M context'
             },
             'gpt-4.1-mini': {
-                'input': 0.40,    # Legacy model - will be converted to gpt-4o-mini
-                'output': 1.60,
-                'description': 'Legacy model (converted to gpt-4o-mini)'
+                'input': 0.40,    # $0.40 per 1M input tokens
+                'output': 1.60,   # $1.60 per 1M output tokens
+                'description': 'Balanced performance and cost with 1M context'
             },
             'gpt-4.1': {
-                'input': 3.00,    # Legacy model - will be converted to gpt-4o-mini
-                'output': 12.00,
-                'description': 'Legacy model (converted to gpt-4o-mini)'
+                'input': 3.00,    # $3.00 per 1M input tokens
+                'output': 12.00,  # $12.00 per 1M output tokens
+                'description': 'Most capable model with 1M context'
             }
         }
         
@@ -1540,9 +1530,8 @@ Return ONLY valid JSON format:
 If not found, use null for that field."""
                 
                 selected_model = self.model_var.get()
-                # Use valid OpenAI model name
-                if selected_model in ['gpt-4.1-nano', 'gpt-4.1-mini', 'gpt-4.1']:
-                    selected_model = 'gpt-4o-mini'  # Use valid model name
+                # GPT-4.1 series models are valid in 2025
+                self.log_message(f"Using model: {selected_model}")
                 
                 # Call OpenAI API with high quality settings
                 response = client.chat.completions.create(
@@ -1626,6 +1615,14 @@ If not found, use null for that field."""
             debug_path = os.path.join(debug_folder, f"cropped_{filename.replace('.pdf', '')}.png")
             cropped.save(debug_path)
             self.log_message(f"Debug: Saved cropped image to {debug_path} (size: {cropped.size})")
+            
+            # Check if cropped image is too small for OCR
+            if cropped.size[0] < 100 or cropped.size[1] < 50:
+                self.log_message(f"WARNING: Cropped image is very small {cropped.size} - may not contain readable text!")
+                self.log_message(f"Consider adjusting crop region in Manual Crop tab to be larger")
+                self.log_message(f"Current crop region: ({self.config['crop_x1']:.3f}, {self.config['crop_y1']:.3f}) to ({self.config['crop_x2']:.3f}, {self.config['crop_y2']:.3f})")
+            elif cropped.size[0] < 200 or cropped.size[1] < 100:
+                self.log_message(f"WARNING: Cropped image is small {cropped.size} - text might be hard to read")
             
             # Extract text using OpenAI
             extracted_data = self.extract_text_with_openai(cropped)

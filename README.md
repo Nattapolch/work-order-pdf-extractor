@@ -1,6 +1,13 @@
 # Work Order PDF Extractor
 
+[![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![OpenAI](https://img.shields.io/badge/OpenAI-GPT--4o--mini-green.svg)](https://openai.com/)
+[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![GUI](https://img.shields.io/badge/GUI-Tkinter-red.svg)](https://docs.python.org/3/library/tkinter.html)
+
 A Python GUI application that processes work order PDFs, extracts work order numbers and equipment numbers using OpenAI's GPT-4 Vision API, and organizes files based on CSV reference data.
+
+![Work Order Extractor Demo](https://via.placeholder.com/800x400/1e1e1e/ffffff?text=Work+Order+PDF+Extractor)
 
 ## Features
 
@@ -11,17 +18,33 @@ A Python GUI application that processes work order PDFs, extracts work order num
 - **GUI Interface**: Easy-to-use tkinter-based interface with tabs for settings, processing, and logs
 - **Progress Tracking**: Real-time progress updates and detailed logging
 
-## Installation
+## Quick Start
 
-1. Install required dependencies:
+### Automated Setup (Recommended)
+```bash
+git clone https://github.com/Nattapolch/work-order-pdf-extractor.git
+cd work-order-pdf-extractor
+python3 setup.py
+```
+
+### Manual Installation
+
+1. **Clone the repository:**
+```bash
+git clone https://github.com/Nattapolch/work-order-pdf-extractor.git
+cd work-order-pdf-extractor
+```
+
+2. **Install Python dependencies:**
 ```bash
 pip install -r requirements.txt
 ```
 
-2. For PDF processing, you may also need to install poppler-utils:
-   - **Windows**: Download from [poppler for Windows](https://blog.alivate.com.au/poppler-windows/)
+3. **Install system dependencies:**
    - **macOS**: `brew install poppler`
-   - **Linux**: `sudo apt-get install poppler-utils` or `sudo yum install poppler-utils`
+   - **Ubuntu/Debian**: `sudo apt-get install poppler-utils`
+   - **CentOS/RHEL**: `sudo yum install poppler-utils`
+   - **Windows**: Download from [poppler for Windows](https://blog.alivate.com.au/poppler-windows/)
 
 ## Usage
 

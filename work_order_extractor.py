@@ -218,7 +218,7 @@ class WorkOrderExtractor:
         # Manual crop variables - initialize before creating tabs
         self.crop_window = None
         self.crop_canvas = None
-        self.crop_image = None
+        self.crop_image_obj = None
         self.selection_rect = None
         self.start_x = 0
         self.start_y = 0
@@ -1605,6 +1605,15 @@ Use null if not found."""
             
             # Extract text using OpenAI
             extracted_data = self.extract_text_with_openai(cropped)
+            
+            # Defensive check to prevent 'NoneType' object is not callable error
+            if extracted_data is None:
+                self.log_message(f"Warning: extract_text_with_openai returned None for {filename}")
+                extracted_data = {'work_order_number': None, 'equipment_number': None}
+            elif not isinstance(extracted_data, dict):
+                self.log_message(f"Warning: extract_text_with_openai returned non-dict type {type(extracted_data)} for {filename}")
+                extracted_data = {'work_order_number': None, 'equipment_number': None}
+            
             work_order_num = extracted_data.get('work_order_number')
             equipment_num = extracted_data.get('equipment_number')
             

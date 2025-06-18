@@ -36,7 +36,21 @@ class WorkOrderExtractor:
     def __init__(self, root):
         self.root = root
         self.root.title("Work Order PDF Extractor")
-        self.root.geometry("800x700")
+        # Enhanced responsive sizing for large monitors and laptops
+        self.root.geometry("1400x900")
+        self.root.minsize(1200, 800)
+        
+        # Center window on screen
+        self.root.update_idletasks()
+        width = 1400
+        height = 900
+        x = (self.root.winfo_screenwidth() // 2) - (width // 2)
+        y = (self.root.winfo_screenheight() // 2) - (height // 2)
+        self.root.geometry(f"{width}x{height}+{x}+{y}")
+        
+        # Configure root grid weights for better responsiveness
+        self.root.grid_rowconfigure(0, weight=1)
+        self.root.grid_columnconfigure(0, weight=1)
         
         # Configuration
         self.config = {
@@ -80,7 +94,9 @@ class WorkOrderExtractor:
             'total_cost_usd': 0.0,
             'total_cost_thb': 0.0,
             'files_processed': 0,
-            'api_calls': 0
+            'api_calls': 0,
+            'successful_files': 0,
+            'failed_files': 0
         }
         
         # Create directories if they don't exist
@@ -122,9 +138,22 @@ class WorkOrderExtractor:
     
     def create_widgets(self):
         """Create the main GUI widgets"""
-        # Main notebook for tabs
+        # Configure enhanced style for better appearance
+        style = ttk.Style()
+        style.theme_use('clam')  # Use modern theme
+        
+        # Configure custom colors and styles
+        style.configure('Title.TLabel', font=('Arial', 12, 'bold'), foreground='#2C3E50')
+        style.configure('Header.TLabel', font=('Arial', 10, 'bold'), foreground='#34495E')
+        style.configure('Info.TLabel', font=('Arial', 9), foreground='#5D6D7E')
+        style.configure('Success.TLabel', font=('Arial', 9, 'bold'), foreground='#27AE60')
+        style.configure('Error.TLabel', font=('Arial', 9, 'bold'), foreground='#E74C3C')
+        style.configure('Warning.TLabel', font=('Arial', 9, 'bold'), foreground='#F39C12')
+        style.configure('Primary.TLabel', font=('Arial', 9, 'bold'), foreground='#3498DB')
+        
+        # Main notebook for tabs with better padding
         self.notebook = ttk.Notebook(self.root)
-        self.notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        self.notebook.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
         
         # Settings tab
         self.create_settings_tab()
@@ -165,104 +194,118 @@ class WorkOrderExtractor:
         self.model_combo.pack(side=tk.LEFT)
         self.model_combo.bind('<<ComboboxSelected>>', self.on_model_changed)
         
-        # Model description
+        # Model description with enhanced styling
         self.model_desc_var = tk.StringVar()
         self.update_model_description()
-        ttk.Label(model_frame, textvariable=self.model_desc_var, foreground="gray").pack(anchor=tk.W, pady=(5,0))
+        desc_label = ttk.Label(model_frame, textvariable=self.model_desc_var, style='Info.TLabel')
+        desc_label.pack(anchor=tk.W, pady=(5,0))
         
         # Cost tracking section
-        cost_frame = ttk.LabelFrame(settings_frame, text="Cost Tracking (Session)", padding=10)
+        cost_frame = ttk.LabelFrame(settings_frame, text="Cost Tracking (Session)", padding=15)
         cost_frame.pack(fill=tk.X, padx=10, pady=5)
         
-        # Create cost display grid
+        # Create enhanced cost display grid with better spacing and responsive design
         cost_grid = ttk.Frame(cost_frame)
-        cost_grid.pack(fill=tk.X)
+        cost_grid.pack(fill=tk.X, padx=5, pady=5)
         
-        ttk.Label(cost_grid, text="API Calls:").grid(row=0, column=0, sticky=tk.W, padx=5)
+        # Configure grid columns to be responsive for large screens
+        for i in range(6):
+            cost_grid.grid_columnconfigure(i, weight=1)
+        
+        # First row - API calls and tokens
+        ttk.Label(cost_grid, text="API Calls:", style='Header.TLabel').grid(row=0, column=0, sticky=tk.W, padx=8, pady=3)
         self.api_calls_var = tk.StringVar(value="0")
-        ttk.Label(cost_grid, textvariable=self.api_calls_var, foreground="blue").grid(row=0, column=1, sticky=tk.W, padx=5)
+        ttk.Label(cost_grid, textvariable=self.api_calls_var, style='Primary.TLabel').grid(row=0, column=1, sticky=tk.W, padx=8, pady=3)
         
-        ttk.Label(cost_grid, text="Input Tokens:").grid(row=0, column=2, sticky=tk.W, padx=5)
+        ttk.Label(cost_grid, text="Input Tokens:", style='Header.TLabel').grid(row=0, column=2, sticky=tk.W, padx=8, pady=3)
         self.input_tokens_var = tk.StringVar(value="0")
-        ttk.Label(cost_grid, textvariable=self.input_tokens_var, foreground="green").grid(row=0, column=3, sticky=tk.W, padx=5)
+        ttk.Label(cost_grid, textvariable=self.input_tokens_var, style='Success.TLabel').grid(row=0, column=3, sticky=tk.W, padx=8, pady=3)
         
-        ttk.Label(cost_grid, text="Output Tokens:").grid(row=1, column=0, sticky=tk.W, padx=5)
+        ttk.Label(cost_grid, text="Output Tokens:", style='Header.TLabel').grid(row=0, column=4, sticky=tk.W, padx=8, pady=3)
         self.output_tokens_var = tk.StringVar(value="0")
-        ttk.Label(cost_grid, textvariable=self.output_tokens_var, foreground="orange").grid(row=1, column=1, sticky=tk.W, padx=5)
+        ttk.Label(cost_grid, textvariable=self.output_tokens_var, style='Warning.TLabel').grid(row=0, column=5, sticky=tk.W, padx=8, pady=3)
         
-        ttk.Label(cost_grid, text="Cost (USD):").grid(row=1, column=2, sticky=tk.W, padx=5)
+        # Second row - costs
+        ttk.Label(cost_grid, text="Cost (USD):", style='Header.TLabel').grid(row=1, column=0, sticky=tk.W, padx=8, pady=3)
         self.cost_usd_var = tk.StringVar(value="$0.00")
-        ttk.Label(cost_grid, textvariable=self.cost_usd_var, foreground="red").grid(row=1, column=3, sticky=tk.W, padx=5)
+        ttk.Label(cost_grid, textvariable=self.cost_usd_var, style='Error.TLabel').grid(row=1, column=1, sticky=tk.W, padx=8, pady=3)
         
-        ttk.Label(cost_grid, text="Cost (THB):").grid(row=2, column=0, sticky=tk.W, padx=5)
+        ttk.Label(cost_grid, text="Cost (THB):", style='Header.TLabel').grid(row=1, column=2, sticky=tk.W, padx=8, pady=3)
         self.cost_thb_var = tk.StringVar(value="฿0.00")
-        ttk.Label(cost_grid, textvariable=self.cost_thb_var, foreground="purple").grid(row=2, column=1, sticky=tk.W, padx=5)
+        ttk.Label(cost_grid, textvariable=self.cost_thb_var, font=("Arial", 9, "bold"), foreground="#8E44AD").grid(row=1, column=3, sticky=tk.W, padx=8, pady=3)
         
-        # Reset stats button
-        ttk.Button(cost_frame, text="Reset Session Stats", 
-                  command=self.reset_session_stats).pack(pady=5)
+        # Reset stats button with improved styling
+        reset_stats_btn = ttk.Button(cost_frame, text="🔄 Reset Session Stats", 
+                                    command=self.reset_session_stats)
+        reset_stats_btn.pack(pady=8)
         
-        # Crop coordinates section
-        crop_frame = ttk.LabelFrame(settings_frame, text="Crop Coordinates (as fraction of PDF size)", padding=10)
+        # Crop coordinates section with improved layout
+        crop_frame = ttk.LabelFrame(settings_frame, text="Crop Coordinates (as fraction of PDF size)", padding=15)
         crop_frame.pack(fill=tk.X, padx=10, pady=5)
         
+        # Enhanced coordinate inputs with validation
         coord_frame = ttk.Frame(crop_frame)
-        coord_frame.pack(fill=tk.X)
+        coord_frame.pack(fill=tk.X, padx=10, pady=5)
         
-        # X1, Y1 (top-left)
-        ttk.Label(coord_frame, text="X1 (left):").grid(row=0, column=0, sticky=tk.W, padx=5)
+        # Configure grid for better responsiveness on large screens
+        for i in range(8):
+            coord_frame.grid_columnconfigure(i, weight=1)
+        
+        # Enhanced coordinate inputs with better layout for large screens
+        ttk.Label(coord_frame, text="X1 (left):", style='Header.TLabel').grid(row=0, column=0, sticky=tk.W, padx=8, pady=5)
         self.x1_var = tk.DoubleVar(value=self.config['crop_x1'])
-        ttk.Entry(coord_frame, textvariable=self.x1_var, width=10).grid(row=0, column=1, padx=5)
+        ttk.Entry(coord_frame, textvariable=self.x1_var, width=15, font=("Arial", 10)).grid(row=0, column=1, padx=8, pady=5, sticky=tk.EW)
         
-        ttk.Label(coord_frame, text="Y1 (top):").grid(row=0, column=2, sticky=tk.W, padx=5)
+        ttk.Label(coord_frame, text="Y1 (top):", style='Header.TLabel').grid(row=0, column=2, sticky=tk.W, padx=8, pady=5)
         self.y1_var = tk.DoubleVar(value=self.config['crop_y1'])
-        ttk.Entry(coord_frame, textvariable=self.y1_var, width=10).grid(row=0, column=3, padx=5)
+        ttk.Entry(coord_frame, textvariable=self.y1_var, width=15, font=("Arial", 10)).grid(row=0, column=3, padx=8, pady=5, sticky=tk.EW)
         
-        # X2, Y2 (bottom-right)
-        ttk.Label(coord_frame, text="X2 (right):").grid(row=1, column=0, sticky=tk.W, padx=5)
+        ttk.Label(coord_frame, text="X2 (right):", style='Header.TLabel').grid(row=0, column=4, sticky=tk.W, padx=8, pady=5)
         self.x2_var = tk.DoubleVar(value=self.config['crop_x2'])
-        ttk.Entry(coord_frame, textvariable=self.x2_var, width=10).grid(row=1, column=1, padx=5)
+        ttk.Entry(coord_frame, textvariable=self.x2_var, width=15, font=("Arial", 10)).grid(row=0, column=5, padx=8, pady=5, sticky=tk.EW)
         
-        ttk.Label(coord_frame, text="Y2 (bottom):").grid(row=1, column=2, sticky=tk.W, padx=5)
+        ttk.Label(coord_frame, text="Y2 (bottom):", style='Header.TLabel').grid(row=0, column=6, sticky=tk.W, padx=8, pady=5)
         self.y2_var = tk.DoubleVar(value=self.config['crop_y2'])
-        ttk.Entry(coord_frame, textvariable=self.y2_var, width=10).grid(row=1, column=3, padx=5)
+        ttk.Entry(coord_frame, textvariable=self.y2_var, width=15, font=("Arial", 10)).grid(row=0, column=7, padx=8, pady=5, sticky=tk.EW)
         
         # Reset to default button
-        ttk.Button(crop_frame, text="Reset to Default (1/4 size)", 
-                  command=self.reset_crop_default).pack(pady=5)
+        reset_btn = ttk.Button(crop_frame, text="🔄 Reset to Default (1/4 size)", 
+                              command=self.reset_crop_default)
+        reset_btn.pack(pady=8)
         
-        # File paths section
-        paths_frame = ttk.LabelFrame(settings_frame, text="File Paths", padding=10)
+        # File paths section with better spacing
+        paths_frame = ttk.LabelFrame(settings_frame, text="File Paths", padding=15)
         paths_frame.pack(fill=tk.X, padx=10, pady=5)
         
-        # PDF folder
-        ttk.Label(paths_frame, text="PDF Folder:").pack(anchor=tk.W)
+        # Enhanced PDF folder section
+        ttk.Label(paths_frame, text="📁 PDF Folder:", style='Header.TLabel').pack(anchor=tk.W, pady=(5,2))
         self.pdf_folder_var = tk.StringVar(value=self.config['pdf_folder'])
         pdf_frame = ttk.Frame(paths_frame)
-        pdf_frame.pack(fill=tk.X, pady=2)
-        ttk.Entry(pdf_frame, textvariable=self.pdf_folder_var, width=50).pack(side=tk.LEFT, fill=tk.X, expand=True)
-        ttk.Button(pdf_frame, text="Browse", command=self.browse_pdf_folder).pack(side=tk.RIGHT, padx=(5,0))
+        pdf_frame.pack(fill=tk.X, pady=5)
+        ttk.Entry(pdf_frame, textvariable=self.pdf_folder_var, width=60, font=("Arial", 10)).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0,5))
+        ttk.Button(pdf_frame, text="📂 Browse", command=self.browse_pdf_folder, width=12).pack(side=tk.RIGHT)
         
-        # CSV reference file
-        ttk.Label(paths_frame, text="Reference CSV File:").pack(anchor=tk.W, pady=(10,0))
+        # Enhanced CSV reference file section
+        ttk.Label(paths_frame, text="📄 Reference CSV File:", style='Header.TLabel').pack(anchor=tk.W, pady=(15,2))
         self.csv_file_var = tk.StringVar(value=self.config['ref_csv_file'])
         csv_frame = ttk.Frame(paths_frame)
-        csv_frame.pack(fill=tk.X, pady=2)
-        ttk.Entry(csv_frame, textvariable=self.csv_file_var, width=50).pack(side=tk.LEFT, fill=tk.X, expand=True)
-        ttk.Button(csv_frame, text="Browse", command=self.browse_csv_file).pack(side=tk.RIGHT, padx=(5,0))
+        csv_frame.pack(fill=tk.X, pady=5)
+        ttk.Entry(csv_frame, textvariable=self.csv_file_var, width=60, font=("Arial", 10)).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0,5))
+        ttk.Button(csv_frame, text="📂 Browse", command=self.browse_csv_file, width=12).pack(side=tk.RIGHT)
         
-        # Save settings button
-        ttk.Button(settings_frame, text="Save Settings", 
-                  command=self.save_settings).pack(pady=10)
+        # Enhanced save settings button
+        save_btn = ttk.Button(settings_frame, text="💾 Save Settings", 
+                             command=self.save_settings, width=20)
+        save_btn.pack(pady=20)
     
     def create_processing_tab(self):
         """Create the main processing tab"""
         process_frame = ttk.Frame(self.notebook)
         self.notebook.add(process_frame, text="Process PDFs")
         
-        # Status section
-        status_frame = ttk.LabelFrame(process_frame, text="Status", padding=10)
-        status_frame.pack(fill=tk.X, padx=10, pady=5)
+        # Enhanced status section
+        status_frame = ttk.LabelFrame(process_frame, text="📊 Processing Status", padding=15)
+        status_frame.pack(fill=tk.X, padx=15, pady=10)
         
         self.status_var = tk.StringVar(value="Ready to process")
         ttk.Label(status_frame, textvariable=self.status_var).pack(anchor=tk.W)
@@ -273,37 +316,84 @@ class WorkOrderExtractor:
                                           maximum=100, length=300)
         self.progress_bar.pack(fill=tk.X, pady=5)
         
-        # Current session cost display
+        # Current session cost display with better contrast
         cost_summary_frame = ttk.Frame(status_frame)
         cost_summary_frame.pack(fill=tk.X, pady=5)
         
         self.session_cost_var = tk.StringVar(value="Session Cost: $0.00 USD (฿0.00 THB)")
         ttk.Label(cost_summary_frame, textvariable=self.session_cost_var, 
-                 foreground="purple", font=("Arial", 9, "bold")).pack(anchor=tk.W)
+                 font=("Arial", 11, "bold"), foreground="#FFFFFF", background="#2C3E50").pack(anchor=tk.W, pady=2)
         
-        # Control buttons
+        # Add background frame for better contrast
+        session_cost_bg = ttk.Frame(cost_summary_frame, style='Dark.TFrame')
+        session_cost_bg.pack(fill=tk.X, pady=2)
+        self.session_cost_label = ttk.Label(session_cost_bg, textvariable=self.session_cost_var, 
+                 font=("Arial", 11, "bold"), foreground="#FFFFFF")
+        self.session_cost_label.pack(padx=10, pady=5)
+        
+        # Add Success/Fail results display
+        results_frame = ttk.Frame(status_frame)
+        results_frame.pack(fill=tk.X, pady=5)
+        
+        # Results display with better styling
+        results_grid = ttk.Frame(results_frame)
+        results_grid.pack(fill=tk.X)
+        
+        ttk.Label(results_grid, text="Results:", font=("Arial", 10, "bold")).grid(row=0, column=0, sticky=tk.W, padx=5)
+        
+        ttk.Label(results_grid, text="Success:", font=("Arial", 9)).grid(row=0, column=1, sticky=tk.W, padx=10)
+        self.success_count_var = tk.StringVar(value="0")
+        ttk.Label(results_grid, textvariable=self.success_count_var, 
+                 foreground="#27AE60", font=("Arial", 9, "bold")).grid(row=0, column=2, sticky=tk.W, padx=5)
+        
+        ttk.Label(results_grid, text="Failed:", font=("Arial", 9)).grid(row=0, column=3, sticky=tk.W, padx=10)
+        self.fail_count_var = tk.StringVar(value="0")
+        ttk.Label(results_grid, textvariable=self.fail_count_var, 
+                 foreground="#E74C3C", font=("Arial", 9, "bold")).grid(row=0, column=4, sticky=tk.W, padx=5)
+        
+        # Enhanced control buttons with improved styling
         button_frame = ttk.Frame(process_frame)
-        button_frame.pack(fill=tk.X, padx=10, pady=10)
+        button_frame.pack(fill=tk.X, padx=15, pady=20)
         
-        self.process_button = ttk.Button(button_frame, text="Start Processing", 
-                                       command=self.start_processing)
-        self.process_button.pack(side=tk.LEFT, padx=5)
+        # Create button grid for better layout on large screens
+        button_grid = ttk.Frame(button_frame)
+        button_grid.pack(fill=tk.X)
         
-        self.stop_button = ttk.Button(button_frame, text="Stop", 
-                                    command=self.stop_processing, state=tk.DISABLED)
-        self.stop_button.pack(side=tk.LEFT, padx=5)
+        for i in range(4):
+            button_grid.grid_columnconfigure(i, weight=1)
         
-        # Preview section
-        preview_frame = ttk.LabelFrame(process_frame, text="Preview", padding=10)
+        self.process_button = ttk.Button(button_grid, text="▶️ Start Processing", 
+                                       command=self.start_processing, width=20)
+        self.process_button.grid(row=0, column=0, padx=10, pady=8, sticky=tk.EW)
+        
+        self.stop_button = ttk.Button(button_grid, text="⏹️ Stop Processing", 
+                                    command=self.stop_processing, state=tk.DISABLED, width=20)
+        self.stop_button.grid(row=0, column=1, padx=10, pady=8, sticky=tk.EW)
+        
+        # Preview section with better styling
+        preview_frame = ttk.LabelFrame(process_frame, text="Preview & Testing", padding=15)
         preview_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
         
-        # Test crop button
-        ttk.Button(preview_frame, text="Test Crop on First PDF", 
-                  command=self.test_crop).pack(pady=5)
+        # Enhanced test buttons layout
+        test_buttons_frame = ttk.Frame(preview_frame)
+        test_buttons_frame.pack(fill=tk.X, pady=(0, 15))
         
-        # Test API button
-        ttk.Button(preview_frame, text="Test OpenAI API", 
-                  command=self.test_api).pack(pady=5)
+        # Test buttons grid for better responsive layout
+        test_grid = ttk.Frame(test_buttons_frame)
+        test_grid.pack(fill=tk.X)
+        
+        for i in range(3):
+            test_grid.grid_columnconfigure(i, weight=1)
+        
+        # Test crop button with improved styling
+        test_crop_btn = ttk.Button(test_grid, text="🔍 Test Crop on First PDF", 
+                                  command=self.test_crop, width=25)
+        test_crop_btn.grid(row=0, column=0, padx=8, pady=8, sticky=tk.EW)
+        
+        # Test API button with improved styling
+        test_api_btn = ttk.Button(test_grid, text="🔧 Test OpenAI API", 
+                                 command=self.test_api, width=25)
+        test_api_btn.grid(row=0, column=1, padx=8, pady=8, sticky=tk.EW)
         
         # Preview image
         self.preview_label = ttk.Label(preview_frame, text="No preview available")
@@ -314,16 +404,23 @@ class WorkOrderExtractor:
         log_frame = ttk.Frame(self.notebook)
         self.notebook.add(log_frame, text="Logs")
         
-        # Log display
-        self.log_text = scrolledtext.ScrolledText(log_frame, height=30)
-        self.log_text.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        # Enhanced log display with better styling for large screens
+        self.log_text = scrolledtext.ScrolledText(log_frame, height=35, font=("Consolas", 10), wrap=tk.WORD,
+                                                 background="#F8F9FA", foreground="#2C3E50")
+        self.log_text.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
         
-        # Log control buttons
+        # Enhanced log control buttons
         log_button_frame = ttk.Frame(log_frame)
-        log_button_frame.pack(pady=5)
+        log_button_frame.pack(pady=10)
         
-        ttk.Button(log_button_frame, text="Clear Log", command=self.clear_log).pack(side=tk.LEFT, padx=5)
-        ttk.Button(log_button_frame, text="Copy Log", command=self.copy_log).pack(side=tk.LEFT, padx=5)
+        log_btn_grid = ttk.Frame(log_button_frame)
+        log_btn_grid.pack()
+        
+        for i in range(3):
+            log_btn_grid.grid_columnconfigure(i, weight=1)
+        
+        ttk.Button(log_btn_grid, text="🗑️ Clear Log", command=self.clear_log, width=15).grid(row=0, column=0, padx=8, pady=5)
+        ttk.Button(log_btn_grid, text="📋 Copy Log", command=self.copy_log, width=15).grid(row=0, column=1, padx=8, pady=5)
     
     def reset_crop_default(self):
         """Reset crop coordinates to default (1/4 of PDF size)"""
@@ -353,9 +450,12 @@ class WorkOrderExtractor:
             'total_cost_usd': 0.0,
             'total_cost_thb': 0.0,
             'files_processed': 0,
-            'api_calls': 0
+            'api_calls': 0,
+            'successful_files': 0,
+            'failed_files': 0
         }
         self.update_cost_display()
+        self.update_results_display()
         self.log_message("Session statistics reset")
     
     def update_cost_display(self):
@@ -370,6 +470,9 @@ class WorkOrderExtractor:
         # Update session cost summary
         if hasattr(self, 'session_cost_var'):
             self.session_cost_var.set(f"Session Cost: ${stats['total_cost_usd']:.4f} USD (฿{stats['total_cost_thb']:.2f} THB) | {stats['api_calls']} API calls")
+        
+        # Update results display
+        self.update_results_display()
     
     def calculate_cost(self, input_tokens: int, output_tokens: int, model: str) -> dict:
         """Calculate cost for token usage"""
@@ -412,6 +515,16 @@ class WorkOrderExtractor:
         self.log_message(f"Cost - ${cost_info['usd']:.4f} USD (฿{cost_info['thb']:.2f} THB)")
         
         return cost_info
+    
+    def update_results_display(self):
+        """Update success/fail results display"""
+        if hasattr(self, 'success_count_var'):
+            self.success_count_var.set(str(self.session_stats['successful_files']))
+        if hasattr(self, 'fail_count_var'):
+            self.fail_count_var.set(str(self.session_stats['failed_files']))
+        if hasattr(self, 'total_count_var'):
+            total = self.session_stats['successful_files'] + self.session_stats['failed_files']
+            self.total_count_var.set(str(total))
     
     def browse_pdf_folder(self):
         """Browse for PDF folder"""
@@ -926,13 +1039,22 @@ class WorkOrderExtractor:
                 # Process file
                 if self.process_single_pdf(pdf_path, filename):
                     successful += 1
+                    self.session_stats['successful_files'] += 1
+                else:
+                    self.session_stats['failed_files'] += 1
                 
                 processed += 1
+                self.session_stats['files_processed'] += 1
+                
+                # Update results display in real-time
+                self.update_results_display()
             
             # Complete
             self.progress_var.set(100)
-            self.status_var.set(f"Completed: {successful}/{processed} files processed successfully")
-            self.log_message(f"Processing complete: {successful}/{processed} files processed successfully")
+            success_count = self.session_stats['successful_files']
+            fail_count = self.session_stats['failed_files']
+            self.status_var.set(f"Completed: {success_count} Success, {fail_count} Failed (Total: {processed})")
+            self.log_message(f"Processing complete: {success_count} successful, {fail_count} failed (Total: {processed} files)")
             
         except Exception as e:
             self.logger.error(f"Error in process_all_pdfs: {e}")

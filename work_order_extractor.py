@@ -125,6 +125,10 @@ class WorkOrderExtractor:
         # Load saved settings
         self.load_settings()
         
+        # Initialize manual crop file list after settings are loaded
+        if hasattr(self, 'manual_crop_file_var'):
+            self.root.after(100, self.refresh_pdf_list)  # Delay to ensure UI is ready
+        
     def ensure_directories(self):
         """Create necessary directories if they don't exist"""
         directories = [
@@ -211,8 +215,24 @@ class WorkOrderExtractor:
         self.notebook = ttk.Notebook(main_container)
         self.notebook.pack(fill=tk.BOTH, expand=True)
         
+        # Manual crop variables - initialize before creating tabs
+        self.crop_window = None
+        self.crop_canvas = None
+        self.crop_image = None
+        self.selection_rect = None
+        self.start_x = 0
+        self.start_y = 0
+        self.current_x = 0
+        self.current_y = 0
+        self.crop_preview_image = None
+        self.crop_preview_label = None
+        self.crop_coords_text = None
+        self.pdf_canvas = None
+        self.manual_crop_file_var = None
+        
         # Create modern tabs
         self.create_settings_tab()
+        self.create_manual_crop_tab()
         self.create_processing_tab()
         self.create_log_tab()
     
@@ -530,6 +550,142 @@ class WorkOrderExtractor:
         self.preview_label = ttk.Label(preview_frame, text="No preview available")
         self.preview_label.pack(expand=True)
     
+    def create_manual_crop_tab(self):
+        """Create manual crop tab for interactive region selection"""
+        tab_frame = ttk.Frame(self.notebook)
+        self.notebook.add(tab_frame, text="Manual Crop")
+        
+        # Manual crop controls
+        controls_frame = ttk.Frame(tab_frame)
+        controls_frame.pack(fill=tk.X, padx=20, pady=10)
+        
+        # Instructions
+        instructions = ttk.Label(
+            controls_frame,
+            text="Select a PDF file to preview and drag to select crop region. Changes apply to all PDFs.",
+            font=("Segoe UI", 10)
+        )
+        instructions.pack(anchor=tk.W, pady=(0, 10))
+        
+        # File selection frame
+        file_frame = ttk.Frame(controls_frame)
+        file_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        ttk.Label(file_frame, text="PDF File:", font=("Segoe UI", 10, "bold")).pack(side=tk.LEFT)
+        
+        self.manual_crop_file_var = tk.StringVar()
+        file_combo = ttk.Combobox(
+            file_frame,
+            textvariable=self.manual_crop_file_var,
+            state="readonly",
+            width=40
+        )
+        file_combo.pack(side=tk.LEFT, padx=(10, 10))
+        
+        # Store reference for refresh_pdf_list
+        self._manual_crop_combobox = file_combo
+        
+        ttk.Button(
+            file_frame,
+            text="Load PDF",
+            command=self.load_pdf_for_crop
+        ).pack(side=tk.LEFT, padx=(0, 10))
+        
+        ttk.Button(
+            file_frame,
+            text="Refresh List",
+            command=self.refresh_pdf_list
+        ).pack(side=tk.LEFT)
+        
+        # Crop action buttons
+        action_frame = ttk.Frame(controls_frame)
+        action_frame.pack(fill=tk.X, pady=(10, 0))
+        
+        ttk.Button(
+            action_frame,
+            text="Reset Selection",
+            command=self.reset_crop_selection
+        ).pack(side=tk.LEFT, padx=(0, 10))
+        
+        ttk.Button(
+            action_frame,
+            text="Apply Crop Settings",
+            command=self.apply_manual_crop
+        ).pack(side=tk.LEFT)
+        
+        # Preview area with two columns
+        preview_main = ttk.Frame(tab_frame)
+        preview_main.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
+        
+        # Left column: Full PDF preview with crop selection
+        left_frame = ttk.Frame(preview_main)
+        left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 10))
+        
+        ttk.Label(left_frame, text="PDF Preview (Drag to Select Region)", font=("Segoe UI", 11, "bold")).pack(anchor=tk.W, pady=(0, 5))
+        
+        # Canvas for PDF preview with scrollbars
+        canvas_frame = ttk.Frame(left_frame)
+        canvas_frame.pack(fill=tk.BOTH, expand=True)
+        
+        self.pdf_canvas = tk.Canvas(
+            canvas_frame,
+            bg='white',
+            highlightthickness=1,
+            highlightbackground='#cccccc'
+        )
+        
+        v_scrollbar = ttk.Scrollbar(canvas_frame, orient=tk.VERTICAL, command=self.pdf_canvas.yview)
+        h_scrollbar = ttk.Scrollbar(canvas_frame, orient=tk.HORIZONTAL, command=self.pdf_canvas.xview)
+        
+        self.pdf_canvas.configure(yscrollcommand=v_scrollbar.set, xscrollcommand=h_scrollbar.set)
+        
+        self.pdf_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        v_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        h_scrollbar.pack(side=tk.BOTTOM, fill=tk.X)
+        
+        # Bind mouse events for crop selection
+        self.pdf_canvas.bind("<Button-1>", self.start_crop_selection)
+        self.pdf_canvas.bind("<B1-Motion>", self.update_crop_selection)
+        self.pdf_canvas.bind("<ButtonRelease-1>", self.end_crop_selection)
+        
+        # Right column: Cropped preview
+        right_frame = ttk.Frame(preview_main)
+        right_frame.pack(side=tk.RIGHT, fill=tk.Y, padx=(10, 0))
+        
+        ttk.Label(right_frame, text="Crop Preview", font=("Segoe UI", 11, "bold")).pack(anchor=tk.W, pady=(0, 5))
+        
+        # Crop preview area
+        self.crop_preview_frame = ttk.Frame(right_frame, width=300, height=250, relief="sunken", borderwidth=2)
+        self.crop_preview_frame.pack(fill=tk.BOTH, expand=True)
+        self.crop_preview_frame.pack_propagate(False)
+        
+        self.crop_preview_label = ttk.Label(
+            self.crop_preview_frame,
+            text="No crop region selected",
+            anchor=tk.CENTER,
+            font=("Segoe UI", 10)
+        )
+        self.crop_preview_label.pack(fill=tk.BOTH, expand=True)
+        
+        # Current crop coordinates display
+        coords_frame = ttk.Frame(right_frame)
+        coords_frame.pack(fill=tk.X, pady=(10, 0))
+        
+        ttk.Label(coords_frame, text="Crop Coordinates:", font=("Segoe UI", 10, "bold")).pack(anchor=tk.W)
+        
+        self.crop_coords_text = tk.Text(
+            coords_frame,
+            height=4,
+            width=30,
+            font=('Consolas', 9),
+            bg='#f8f9fa',
+            fg='#2c3e50',
+            relief='flat',
+            borderwidth=1,
+            state='disabled'
+        )
+        self.crop_coords_text.pack(fill=tk.X, pady=(5, 0))
+
     def create_log_tab(self):
         """Create the log viewing tab"""
         log_frame = ttk.Frame(self.notebook)
@@ -805,6 +961,359 @@ class WorkOrderExtractor:
             self.root.clipboard_clear()
             self.root.clipboard_append(log_content)
             messagebox.showinfo("Success", "Log copied to clipboard!")
+    
+    # Manual Crop Methods
+    def refresh_pdf_list(self):
+        """Refresh the PDF file list in the combobox"""
+        try:
+            if not hasattr(self, 'manual_crop_file_var') or self.manual_crop_file_var is None:
+                return
+                
+            # Get PDF folder from various possible sources
+            pdf_folder = self.config['pdf_folder']
+            if hasattr(self, 'pdf_folder_var') and self.pdf_folder_var:
+                try:
+                    pdf_folder = self.pdf_folder_var.get()
+                except:
+                    pass  # Use config default
+            if os.path.exists(pdf_folder):
+                pdf_files = [f for f in os.listdir(pdf_folder) if f.lower().endswith('.pdf')]
+                
+                # Store the combobox reference during tab creation
+                if hasattr(self, '_manual_crop_combobox') and self._manual_crop_combobox:
+                    self._manual_crop_combobox['values'] = pdf_files
+                    if pdf_files and not self.manual_crop_file_var.get():
+                        self.manual_crop_file_var.set(pdf_files[0])
+                
+                self.log_message(f"Found {len(pdf_files)} PDF files")
+            else:
+                self.log_message(f"PDF folder not found: {pdf_folder}")
+        except Exception as e:
+            self.log_message(f"Error refreshing PDF list: {e}")
+    
+    def load_pdf_for_crop(self):
+        """Load selected PDF for crop preview"""
+        try:
+            if not hasattr(self, 'manual_crop_file_var') or not self.manual_crop_file_var.get():
+                messagebox.showwarning("Warning", "Please select a PDF file first")
+                return
+            
+            # Get PDF folder from various possible sources
+            pdf_folder = self.config['pdf_folder']
+            if hasattr(self, 'pdf_folder_var') and self.pdf_folder_var:
+                try:
+                    pdf_folder = self.pdf_folder_var.get()
+                except:
+                    pass  # Use config default
+            pdf_path = os.path.join(pdf_folder, self.manual_crop_file_var.get())
+            
+            if not os.path.exists(pdf_path):
+                messagebox.showerror("Error", f"PDF file not found: {pdf_path}")
+                return
+            
+            self.log_message(f"Loading PDF for crop preview: {self.manual_crop_file_var.get()}")
+            
+            # Convert PDF to image (full page, no cropping)
+            image = self.pdf_to_image_full(pdf_path)
+            if image is None:
+                messagebox.showerror("Error", "Failed to load PDF")
+                return
+            
+            # Store original image for cropping
+            self.crop_original_image = image
+            
+            # Resize image to fit canvas while maintaining aspect ratio
+            canvas_width = 600
+            canvas_height = 800
+            
+            # Calculate scaling factor
+            scale_x = canvas_width / image.width
+            scale_y = canvas_height / image.height
+            scale = min(scale_x, scale_y, 1.0)  # Don't scale up
+            
+            new_width = int(image.width * scale)
+            new_height = int(image.height * scale)
+            
+            # Resize image for display
+            display_image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+            self.crop_display_image = display_image
+            self.crop_scale_factor = scale
+            
+            # Convert to PhotoImage
+            self.crop_photo = ImageTk.PhotoImage(display_image)
+            
+            # Clear canvas and display image
+            self.pdf_canvas.delete("all")
+            self.pdf_canvas.create_image(0, 0, anchor=tk.NW, image=self.crop_photo)
+            
+            # Update canvas scroll region
+            self.pdf_canvas.configure(scrollregion=self.pdf_canvas.bbox("all"))
+            
+            # Reset selection
+            self.selection_rect = None
+            self.update_crop_preview()
+            
+            self.log_message(f"PDF loaded successfully: {new_width}x{new_height} (scale: {scale:.2f})")
+            
+        except Exception as e:
+            self.logger.error(f"Error loading PDF for crop: {e}")
+            self.log_message(f"Error loading PDF: {e}")
+            messagebox.showerror("Error", f"Failed to load PDF: {e}")
+    
+    def pdf_to_image_full(self, pdf_path: str) -> Optional[Image.Image]:
+        """Convert PDF to image without any cropping (for manual crop preview)"""
+        try:
+            # Try with pdf2image first
+            pages = convert_from_path(pdf_path, first_page=1, last_page=1, dpi=150)
+            if pages:
+                return pages[0]
+        except Exception as e:
+            self.logger.warning(f"pdf2image failed for {pdf_path}: {e}")
+            
+        if HAS_PYMUPDF:
+            try:
+                # Fallback to PyMuPDF
+                doc = fitz.open(pdf_path)
+                page = doc[0]
+                mat = fitz.Matrix(1.5, 1.5)
+                pix = page.get_pixmap(matrix=mat)
+                img_data = pix.tobytes("ppm")
+                doc.close()
+                
+                from io import BytesIO
+                return Image.open(BytesIO(img_data))
+            except Exception as e:
+                self.logger.error(f"PyMuPDF fallback failed for {pdf_path}: {e}")
+        
+        return None
+    
+    def start_crop_selection(self, event):
+        """Start crop region selection"""
+        if not hasattr(self, 'crop_photo'):
+            return
+        
+        # Get canvas coordinates
+        self.start_x = self.pdf_canvas.canvasx(event.x)
+        self.start_y = self.pdf_canvas.canvasy(event.y)
+        
+        # Remove existing selection rectangle
+        if self.selection_rect:
+            self.pdf_canvas.delete(self.selection_rect)
+        
+        # Create new selection rectangle
+        self.selection_rect = self.pdf_canvas.create_rectangle(
+            self.start_x, self.start_y, self.start_x, self.start_y,
+            outline='red', width=2, dash=(5, 5)
+        )
+    
+    def update_crop_selection(self, event):
+        """Update crop region selection during drag"""
+        if not self.selection_rect or not hasattr(self, 'crop_photo'):
+            return
+        
+        # Get current canvas coordinates
+        self.current_x = self.pdf_canvas.canvasx(event.x)
+        self.current_y = self.pdf_canvas.canvasy(event.y)
+        
+        # Update rectangle coordinates
+        self.pdf_canvas.coords(
+            self.selection_rect,
+            self.start_x, self.start_y,
+            self.current_x, self.current_y
+        )
+        
+        # Update real-time preview
+        self.update_crop_preview()
+    
+    def end_crop_selection(self, event):
+        """End crop region selection"""
+        if not self.selection_rect or not hasattr(self, 'crop_photo'):
+            return
+        
+        # Final update
+        self.current_x = self.pdf_canvas.canvasx(event.x)
+        self.current_y = self.pdf_canvas.canvasy(event.y)
+        
+        # Update rectangle coordinates
+        self.pdf_canvas.coords(
+            self.selection_rect,
+            self.start_x, self.start_y,
+            self.current_x, self.current_y
+        )
+        
+        # Update preview and coordinates display
+        self.update_crop_preview()
+        self.update_crop_coordinates()
+    
+    def update_crop_preview(self):
+        """Update the real-time crop preview"""
+        try:
+            if not hasattr(self, 'crop_preview_label') or self.crop_preview_label is None:
+                return  # Preview widget not available
+                
+            if not hasattr(self, 'crop_original_image') or not self.selection_rect:
+                # No selection, show placeholder
+                self.crop_preview_label.configure(image='', text="No crop region selected")
+                return
+            
+            # Get selection coordinates (ensure proper order)
+            x1 = min(self.start_x, self.current_x) if hasattr(self, 'current_x') else self.start_x
+            y1 = min(self.start_y, self.current_y) if hasattr(self, 'current_y') else self.start_y
+            x2 = max(self.start_x, self.current_x) if hasattr(self, 'current_x') else self.start_x
+            y2 = max(self.start_y, self.current_y) if hasattr(self, 'current_y') else self.start_y
+            
+            # Check if selection is valid
+            if abs(x2 - x1) < 10 or abs(y2 - y1) < 10:
+                self.crop_preview_label.configure(image='', text="Selection too small")
+                return
+            
+            # Convert display coordinates to original image coordinates
+            orig_x1 = int(x1 / self.crop_scale_factor)
+            orig_y1 = int(y1 / self.crop_scale_factor)
+            orig_x2 = int(x2 / self.crop_scale_factor)
+            orig_y2 = int(y2 / self.crop_scale_factor)
+            
+            # Ensure coordinates are within image bounds
+            orig_x1 = max(0, min(orig_x1, self.crop_original_image.width))
+            orig_y1 = max(0, min(orig_y1, self.crop_original_image.height))
+            orig_x2 = max(0, min(orig_x2, self.crop_original_image.width))
+            orig_y2 = max(0, min(orig_y2, self.crop_original_image.height))
+            
+            # Crop the original image
+            cropped_image = self.crop_original_image.crop((orig_x1, orig_y1, orig_x2, orig_y2))
+            
+            # Resize for preview (maintain aspect ratio)
+            preview_width = 280
+            preview_height = 200
+            
+            # Calculate scaling
+            scale_x = preview_width / cropped_image.width
+            scale_y = preview_height / cropped_image.height
+            scale = min(scale_x, scale_y)
+            
+            new_width = int(cropped_image.width * scale)
+            new_height = int(cropped_image.height * scale)
+            
+            preview_image = cropped_image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+            
+            # Convert to PhotoImage and display
+            self.crop_preview_photo = ImageTk.PhotoImage(preview_image)
+            self.crop_preview_label.configure(image=self.crop_preview_photo, text="")
+            
+        except Exception as e:
+            self.logger.error(f"Error updating crop preview: {e}")
+            if hasattr(self, 'crop_preview_label') and self.crop_preview_label is not None:
+                self.crop_preview_label.configure(image='', text="Preview error")
+    
+    def update_crop_coordinates(self):
+        """Update the crop coordinates display"""
+        try:
+            if not hasattr(self, 'crop_coords_text') or self.crop_coords_text is None:
+                return  # Coordinates widget not available
+                
+            if not hasattr(self, 'crop_original_image') or not self.selection_rect:
+                coords_text = "No selection"
+            else:
+                # Get selection coordinates (ensure proper order)
+                x1 = min(self.start_x, self.current_x)
+                y1 = min(self.start_y, self.current_y)
+                x2 = max(self.start_x, self.current_x)
+                y2 = max(self.start_y, self.current_y)
+                
+                # Convert to original image coordinates
+                orig_x1 = int(x1 / self.crop_scale_factor)
+                orig_y1 = int(y1 / self.crop_scale_factor)
+                orig_x2 = int(x2 / self.crop_scale_factor)
+                orig_y2 = int(y2 / self.crop_scale_factor)
+                
+                # Calculate relative coordinates (0.0 to 1.0)
+                rel_x1 = orig_x1 / self.crop_original_image.width
+                rel_y1 = orig_y1 / self.crop_original_image.height
+                rel_x2 = orig_x2 / self.crop_original_image.width
+                rel_y2 = orig_y2 / self.crop_original_image.height
+                
+                coords_text = f"Absolute:\\n({orig_x1}, {orig_y1}) to ({orig_x2}, {orig_y2})\\n\\nRelative:\\n({rel_x1:.3f}, {rel_y1:.3f}) to ({rel_x2:.3f}, {rel_y2:.3f})"
+            
+            # Update coordinates display
+            self.crop_coords_text.configure(state='normal')
+            self.crop_coords_text.delete(1.0, tk.END)
+            self.crop_coords_text.insert(1.0, coords_text)
+            self.crop_coords_text.configure(state='disabled')
+            
+        except Exception as e:
+            self.logger.error(f"Error updating crop coordinates: {e}")
+    
+    def reset_crop_selection(self):
+        """Reset the crop selection"""
+        if hasattr(self, 'pdf_canvas') and self.selection_rect:
+            self.pdf_canvas.delete(self.selection_rect)
+            self.selection_rect = None
+        
+        # Reset preview
+        if hasattr(self, 'crop_preview_label') and self.crop_preview_label is not None:
+            self.crop_preview_label.configure(image='', text="No crop region selected")
+        
+        # Reset coordinates
+        self.update_crop_coordinates()
+        
+        self.log_message("Crop selection reset")
+    
+    def apply_manual_crop(self):
+        """Apply the manually selected crop region to all PDFs"""
+        try:
+            if not hasattr(self, 'crop_original_image') or not self.selection_rect:
+                messagebox.showwarning("Warning", "Please select a crop region first")
+                return
+            
+            # Get selection coordinates
+            x1 = min(self.start_x, self.current_x)
+            y1 = min(self.start_y, self.current_y)
+            x2 = max(self.start_x, self.current_x)
+            y2 = max(self.start_y, self.current_y)
+            
+            # Convert to original image coordinates
+            orig_x1 = int(x1 / self.crop_scale_factor)
+            orig_y1 = int(y1 / self.crop_scale_factor)
+            orig_x2 = int(x2 / self.crop_scale_factor)
+            orig_y2 = int(y2 / self.crop_scale_factor)
+            
+            # Calculate relative coordinates (0.0 to 1.0)
+            rel_x1 = orig_x1 / self.crop_original_image.width
+            rel_y1 = orig_y1 / self.crop_original_image.height
+            rel_x2 = orig_x2 / self.crop_original_image.width
+            rel_y2 = orig_y2 / self.crop_original_image.height
+            
+            # Update crop configuration
+            self.config['crop_x1'] = rel_x1
+            self.config['crop_y1'] = rel_y1
+            self.config['crop_x2'] = rel_x2
+            self.config['crop_y2'] = rel_y2
+            
+            # Update UI variables if they exist
+            if hasattr(self, 'x1_var'):
+                self.x1_var.set(rel_x1)
+                self.y1_var.set(rel_y1)
+                self.x2_var.set(rel_x2)
+                self.y2_var.set(rel_y2)
+            
+            # Save to config file
+            try:
+                config_copy = self.config.copy()
+                # Remove non-serializable items
+                config_copy.pop('openai_api_key', None)
+                with open('config.json', 'w') as f:
+                    json.dump(config_copy, f, indent=2)
+                self.log_message("Crop settings saved to config.json")
+            except Exception as e:
+                self.log_message(f"Warning: Could not save to config.json: {e}")
+            
+            self.log_message(f"Applied crop region: ({rel_x1:.3f}, {rel_y1:.3f}) to ({rel_x2:.3f}, {rel_y2:.3f})")
+            messagebox.showinfo("Success", f"Crop settings applied!\\n\\nRegion: ({rel_x1:.3f}, {rel_y1:.3f}) to ({rel_x2:.3f}, {rel_y2:.3f})\\n\\nThis will be used for all PDF processing.")
+            
+        except Exception as e:
+            self.logger.error(f"Error applying manual crop: {e}")
+            self.log_message(f"Error applying crop settings: {e}")
+            messagebox.showerror("Error", f"Failed to apply crop settings: {e}")
     
     def pdf_to_image(self, pdf_path: str) -> Optional[Image.Image]:
         """Convert first page of PDF to PIL Image with performance optimization"""

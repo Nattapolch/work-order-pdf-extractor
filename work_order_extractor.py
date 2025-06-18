@@ -73,20 +73,30 @@ class WorkOrderExtractor:
         
         # Model pricing (USD per million tokens) - 2025 rates
         self.model_pricing = {
+            'gpt-4o-mini': {
+                'input': 0.15,    # $0.15 per 1M input tokens
+                'output': 0.60,   # $0.60 per 1M output tokens
+                'description': 'Fast and affordable vision model'
+            },
+            'gpt-4o': {
+                'input': 2.50,    # $2.50 per 1M input tokens
+                'output': 10.00,  # $10.00 per 1M output tokens
+                'description': 'Advanced vision and text model'
+            },
             'gpt-4.1-nano': {
-                'input': 0.10,    # $0.10 per 1M input tokens
-                'output': 0.40,   # $0.40 per 1M output tokens
-                'description': 'Fastest and cheapest model with 1M context'
+                'input': 0.10,    # Legacy model - will be converted to gpt-4o-mini
+                'output': 0.40,
+                'description': 'Legacy model (converted to gpt-4o-mini)'
             },
             'gpt-4.1-mini': {
-                'input': 0.40,    # $0.40 per 1M input tokens
-                'output': 1.60,   # $1.60 per 1M output tokens
-                'description': 'Balanced performance and cost with 1M context'
+                'input': 0.40,    # Legacy model - will be converted to gpt-4o-mini
+                'output': 1.60,
+                'description': 'Legacy model (converted to gpt-4o-mini)'
             },
             'gpt-4.1': {
-                'input': 3.00,    # $3.00 per 1M input tokens (estimated)
-                'output': 12.00,  # $12.00 per 1M output tokens (estimated)
-                'description': 'Most capable model with 1M context'
+                'input': 3.00,    # Legacy model - will be converted to gpt-4o-mini
+                'output': 12.00,
+                'description': 'Legacy model (converted to gpt-4o-mini)'
             }
         }
         
@@ -1513,21 +1523,28 @@ class WorkOrderExtractor:
                 import base64
                 
                 buffered = BytesIO()
-                # Optimize image quality for API
-                image.save(buffered, format="JPEG", quality=85, optimize=True)
+                # High quality image for better OCR
+                image.save(buffered, format="PNG")  # Use PNG for better text clarity
                 img_str = base64.b64encode(buffered.getvalue()).decode()
                 
-                # Optimized prompt for faster processing
-                prompt = """Extract from this work order document:
-1. Work order number (8 digits after "Work Order No.")
-2. Equipment number
+                # Detailed prompt for accurate extraction
+                prompt = """Extract work order number and equipment number from this work order document.
 
-Return JSON: {"work_order_number": "12345678", "equipment_number": "ABC123"}
-Use null if not found."""
+Look for:
+1. Work Order Number: Usually 8 digits after "Work Order No." or similar
+2. Equipment Number: Equipment ID or asset number
+
+Return ONLY valid JSON format:
+{"work_order_number": "12345678", "equipment_number": "ABC123"}
+
+If not found, use null for that field."""
                 
                 selected_model = self.model_var.get()
+                # Use valid OpenAI model name
+                if selected_model in ['gpt-4.1-nano', 'gpt-4.1-mini', 'gpt-4.1']:
+                    selected_model = 'gpt-4o-mini'  # Use valid model name
                 
-                # Call OpenAI API with optimized settings
+                # Call OpenAI API with high quality settings
                 response = client.chat.completions.create(
                     model=selected_model,
                     messages=[
@@ -1538,14 +1555,14 @@ Use null if not found."""
                                 {
                                     "type": "image_url",
                                     "image_url": {
-                                        "url": f"data:image/jpeg;base64,{img_str}",
-                                        "detail": "low"  # Use low detail for faster processing
+                                        "url": f"data:image/png;base64,{img_str}",
+                                        "detail": "high"  # Use high detail for better OCR
                                     }
                                 }
                             ]
                         }
                     ],
-                    max_tokens=150,  # Reduced for faster response
+                    max_tokens=500,  # Increased for vision tasks
                     temperature=0.1  # Lower temperature for consistent results
                 )
                 
@@ -1602,6 +1619,13 @@ Use null if not found."""
             cropped = self.crop_image(image,
                                     self.config['crop_x1'], self.config['crop_y1'],
                                     self.config['crop_x2'], self.config['crop_y2'])
+            
+            # Debug: Save cropped image to see what's being sent to API
+            debug_folder = "debug_crops"
+            os.makedirs(debug_folder, exist_ok=True)
+            debug_path = os.path.join(debug_folder, f"cropped_{filename.replace('.pdf', '')}.png")
+            cropped.save(debug_path)
+            self.log_message(f"Debug: Saved cropped image to {debug_path} (size: {cropped.size})")
             
             # Extract text using OpenAI
             extracted_data = self.extract_text_with_openai(cropped)

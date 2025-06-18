@@ -18,7 +18,9 @@
       "Bash(git push:*)",
       "Bash(git remote get-url:*)",
       "Bash(git checkout:*)",
-      "Bash(git merge:*)"
+      "Bash(git merge:*)",
+      "Bash(rm:*)",
+      "Bash(ls:*)"
     ],
     "deny": []
   }

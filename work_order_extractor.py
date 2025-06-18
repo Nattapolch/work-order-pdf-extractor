@@ -16,6 +16,10 @@ import threading
 from typing import List, Dict, Tuple, Optional
 import logging
 from datetime import datetime
+import asyncio
+import concurrent.futures
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import time
 
 # PDF and image processing
 from pdf2image import convert_from_path
@@ -88,6 +92,11 @@ class WorkOrderExtractor:
         
         # Currency conversion (33 THB = 1 USD)
         self.usd_to_thb = 33.0
+        
+        # Performance settings
+        self.max_concurrent_workers = 5  # Limit concurrent API calls
+        self.pdf_processing_workers = 8  # PDF conversion workers
+        self.batch_size = 10  # Files per batch for progress updates
         
         # Token and cost tracking
         self.session_stats = {
@@ -798,10 +807,16 @@ class WorkOrderExtractor:
             messagebox.showinfo("Success", "Log copied to clipboard!")
     
     def pdf_to_image(self, pdf_path: str) -> Optional[Image.Image]:
-        """Convert first page of PDF to PIL Image"""
+        """Convert first page of PDF to PIL Image with performance optimization"""
         try:
-            # Try with pdf2image first
-            pages = convert_from_path(pdf_path, first_page=1, last_page=1, dpi=200)
+            # Try with pdf2image first with optimized settings
+            pages = convert_from_path(
+                pdf_path, 
+                first_page=1, 
+                last_page=1, 
+                dpi=150,  # Reduced DPI for faster processing
+                thread_count=2  # Use multiple threads for conversion
+            )
             if pages:
                 return pages[0]
         except Exception as e:
@@ -809,10 +824,10 @@ class WorkOrderExtractor:
             
         if HAS_PYMUPDF:
             try:
-                # Fallback to PyMuPDF
+                # Fallback to PyMuPDF with optimized settings
                 doc = fitz.open(pdf_path)
                 page = doc[0]
-                mat = fitz.Matrix(2.0, 2.0)  # 2x zoom
+                mat = fitz.Matrix(1.5, 1.5)  # Reduced zoom for faster processing
                 pix = page.get_pixmap(matrix=mat)
                 img_data = pix.tobytes("ppm")
                 doc.close()
@@ -946,100 +961,100 @@ class WorkOrderExtractor:
             self.logger.error(f"Error showing preview: {e}")
     
     def extract_text_with_openai(self, image: Image.Image) -> Dict[str, str]:
-        """Extract work order number and equipment number using OpenAI API"""
-        try:
-            api_key = self.api_key_var.get().strip()
-            if not api_key:
-                self.log_message("OpenAI API key not configured")
-                raise Exception("OpenAI API key not configured")
-            
-            self.log_message("Starting OpenAI API call...")
-            
-            # Set up OpenAI client
-            client = openai.OpenAI(api_key=api_key)
-            
-            # Save image to bytes
-            from io import BytesIO
-            import base64
-            
-            buffered = BytesIO()
-            image.save(buffered, format="PNG")
-            img_str = base64.b64encode(buffered.getvalue()).decode()
-            self.log_message(f"Image converted to base64, size: {len(img_str)} characters")
-            
-            # Prepare the prompt
-            prompt = """Extract work order number (8 digits after "Work Order No.") and extract Equipment No. from this work order document. 
-            Return the response in JSON format with keys "work_order_number" and "equipment_number". 
-            If you cannot find either value, set it to null."""
-            
-            # Get selected model
-            selected_model = self.model_var.get()
-            self.log_message(f"Using model: {selected_model}")
-            
-            # Call OpenAI API
-            self.log_message("Calling OpenAI API...")
-            response = client.chat.completions.create(
-                model=selected_model,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": prompt},
-                            {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": f"data:image/png;base64,{img_str}"
-                                }
-                            }
-                        ]
-                    }
-                ],
-                max_tokens=300
-            )
-            
-            # Extract token usage
-            usage = response.usage
-            input_tokens = usage.prompt_tokens
-            output_tokens = usage.completion_tokens
-            total_tokens = usage.total_tokens
-            
-            # Track API usage and costs
-            self.track_api_usage(input_tokens, output_tokens, selected_model)
-            
-            # Parse response
-            result_text = response.choices[0].message.content
-            self.log_message(f"OpenAI response: {result_text}")
-            self.log_message(f"Total tokens used: {total_tokens:,} (Input: {input_tokens:,}, Output: {output_tokens:,})")
-            
-            # Try to parse as JSON
+        """Extract work order number and equipment number using OpenAI API with retry logic"""
+        max_retries = 3
+        retry_delay = 1  # seconds
+        
+        for attempt in range(max_retries):
             try:
-                import json
-                # Clean the response text - remove markdown code blocks
-                clean_text = result_text.strip()
-                if clean_text.startswith('```json'):
-                    clean_text = clean_text[7:]  # Remove ```json
-                if clean_text.endswith('```'):
-                    clean_text = clean_text[:-3]  # Remove ```
-                clean_text = clean_text.strip()
+                api_key = self.api_key_var.get().strip()
+                if not api_key:
+                    raise Exception("OpenAI API key not configured")
                 
-                self.log_message(f"Cleaned JSON text: {clean_text}")
+                # Set up OpenAI client with timeout
+                client = openai.OpenAI(
+                    api_key=api_key,
+                    timeout=30.0  # 30 second timeout
+                )
                 
-                result = json.loads(clean_text)
-                extracted_data = {
-                    'work_order_number': result.get('work_order_number'),
-                    'equipment_number': result.get('equipment_number')
-                }
-                self.log_message(f"Successfully parsed JSON: {extracted_data}")
-                return extracted_data
-            except json.JSONDecodeError as e:
-                # Fallback: try to extract manually from text
-                self.log_message(f"Failed to parse JSON response, error: {e}, raw text: {result_text}")
-                return {'work_order_number': None, 'equipment_number': None}
+                # Optimize image encoding
+                from io import BytesIO
+                import base64
                 
-        except Exception as e:
-            self.logger.error(f"Error extracting text with OpenAI: {e}")
-            self.log_message(f"OpenAI API error: {str(e)}")
-            return {'work_order_number': None, 'equipment_number': None}
+                buffered = BytesIO()
+                # Optimize image quality for API
+                image.save(buffered, format="JPEG", quality=85, optimize=True)
+                img_str = base64.b64encode(buffered.getvalue()).decode()
+                
+                # Optimized prompt for faster processing
+                prompt = """Extract from this work order document:
+1. Work order number (8 digits after "Work Order No.")
+2. Equipment number
+
+Return JSON: {"work_order_number": "12345678", "equipment_number": "ABC123"}
+Use null if not found."""
+                
+                selected_model = self.model_var.get()
+                
+                # Call OpenAI API with optimized settings
+                response = client.chat.completions.create(
+                    model=selected_model,
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": prompt},
+                                {
+                                    "type": "image_url",
+                                    "image_url": {
+                                        "url": f"data:image/jpeg;base64,{img_str}",
+                                        "detail": "low"  # Use low detail for faster processing
+                                    }
+                                }
+                            ]
+                        }
+                    ],
+                    max_tokens=150,  # Reduced for faster response
+                    temperature=0.1  # Lower temperature for consistent results
+                )
+                
+                # Extract token usage
+                usage = response.usage
+                self.track_api_usage(usage.prompt_tokens, usage.completion_tokens, selected_model)
+                
+                # Parse response
+                result_text = response.choices[0].message.content
+                
+                # Parse JSON response
+                try:
+                    import json
+                    # Clean the response text
+                    clean_text = result_text.strip()
+                    if clean_text.startswith('```json'):
+                        clean_text = clean_text[7:]
+                    if clean_text.endswith('```'):
+                        clean_text = clean_text[:-3]
+                    clean_text = clean_text.strip()
+                    
+                    result = json.loads(clean_text)
+                    return {
+                        'work_order_number': result.get('work_order_number'),
+                        'equipment_number': result.get('equipment_number')
+                    }
+                except json.JSONDecodeError:
+                    # Fallback: return empty result
+                    return {'work_order_number': None, 'equipment_number': None}
+                    
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    self.log_message(f"API call failed (attempt {attempt + 1}/{max_retries}), retrying in {retry_delay}s: {str(e)}")
+                    time.sleep(retry_delay)
+                    retry_delay *= 2  # Exponential backoff
+                else:
+                    self.logger.error(f"Error extracting text with OpenAI after {max_retries} attempts: {e}")
+                    return {'work_order_number': None, 'equipment_number': None}
+        
+        return {'work_order_number': None, 'equipment_number': None}
     
     def process_single_pdf(self, pdf_path: str, filename: str) -> bool:
         """Process a single PDF file"""
@@ -1169,7 +1184,7 @@ class WorkOrderExtractor:
         self.stop_processing_flag = False
     
     def process_all_pdfs(self):
-        """Process all PDF files in the folder"""
+        """Process all PDF files in the folder with concurrent processing"""
         try:
             pdf_folder = self.config['pdf_folder']
             pdf_files = [f for f in os.listdir(pdf_folder) if f.lower().endswith('.pdf')]
@@ -1180,42 +1195,76 @@ class WorkOrderExtractor:
                 return
             
             self.log_message(f"Found {len(pdf_files)} PDF files to process")
+            self.log_message(f"Using {self.max_concurrent_workers} concurrent workers for API calls")
             
-            processed = 0
-            successful = 0
+            start_time = time.time()
             
-            for i, filename in enumerate(pdf_files):
-                if self.stop_processing_flag:
-                    self.log_message("Processing stopped by user")
-                    break
+            # Use ThreadPoolExecutor for concurrent processing
+            with ThreadPoolExecutor(max_workers=self.max_concurrent_workers) as executor:
+                # Submit all tasks
+                future_to_file = {
+                    executor.submit(self.process_single_pdf, 
+                                   os.path.join(pdf_folder, filename), 
+                                   filename): filename 
+                    for filename in pdf_files
+                }
                 
-                pdf_path = os.path.join(pdf_folder, filename)
+                processed = 0
+                successful = 0
+                failed = 0
                 
-                # Update progress
-                progress = (i / len(pdf_files)) * 100
-                self.progress_var.set(progress)
-                self.status_var.set(f"Processing {i+1}/{len(pdf_files)}: {filename}")
-                self.root.update_idletasks()
-                
-                # Process file
-                if self.process_single_pdf(pdf_path, filename):
-                    successful += 1
-                    self.session_stats['successful_files'] += 1
-                else:
-                    self.session_stats['failed_files'] += 1
-                
-                processed += 1
-                self.session_stats['files_processed'] += 1
-                
-                # Update results display in real-time
-                self.update_results_display()
+                # Process completed tasks as they finish
+                for future in as_completed(future_to_file):
+                    if self.stop_processing_flag:
+                        self.log_message("Processing stopped by user - cancelling remaining tasks")
+                        # Cancel remaining futures
+                        for f in future_to_file:
+                            if not f.done():
+                                f.cancel()
+                        break
+                    
+                    filename = future_to_file[future]
+                    processed += 1
+                    
+                    try:
+                        result = future.result()
+                        if result:
+                            successful += 1
+                            self.session_stats['successful_files'] += 1
+                        else:
+                            failed += 1
+                            self.session_stats['failed_files'] += 1
+                    except Exception as e:
+                        self.logger.error(f"Error processing {filename}: {e}")
+                        self.log_message(f"Error processing {filename}: {e}")
+                        failed += 1
+                        self.session_stats['failed_files'] += 1
+                    
+                    self.session_stats['files_processed'] += 1
+                    
+                    # Update progress
+                    progress = (processed / len(pdf_files)) * 100
+                    self.progress_var.set(progress)
+                    self.status_var.set(f"Processed {processed}/{len(pdf_files)} files (Success: {successful}, Failed: {failed})")
+                    self.root.update_idletasks()
+                    
+                    # Update results display
+                    self.update_results_display()
+                    
+                    # Log progress every batch
+                    if processed % self.batch_size == 0 or processed == len(pdf_files):
+                        elapsed = time.time() - start_time
+                        rate = processed / elapsed if elapsed > 0 else 0
+                        remaining = len(pdf_files) - processed
+                        eta = remaining / rate if rate > 0 else 0
+                        self.log_message(f"Progress: {processed}/{len(pdf_files)} files ({rate:.1f} files/sec, ETA: {eta:.0f}s)")
             
             # Complete
+            total_time = time.time() - start_time
             self.progress_var.set(100)
-            success_count = self.session_stats['successful_files']
-            fail_count = self.session_stats['failed_files']
-            self.status_var.set(f"Completed: {success_count} Success, {fail_count} Failed (Total: {processed})")
-            self.log_message(f"Processing complete: {success_count} successful, {fail_count} failed (Total: {processed} files)")
+            self.status_var.set(f"Completed: {successful} Success, {failed} Failed (Total: {processed} in {total_time:.1f}s)")
+            self.log_message(f"Processing complete: {successful} successful, {failed} failed")
+            self.log_message(f"Total time: {total_time:.1f}s, Average: {total_time/processed:.1f}s per file")
             
         except Exception as e:
             self.logger.error(f"Error in process_all_pdfs: {e}")

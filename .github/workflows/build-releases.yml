@@ -2,111 +2,103 @@ name: Build Multi-Platform Releases
 
 on:
   push:
-    branches: [ main ]
     tags:
       - 'v*'
-  pull_request:
-    branches: [ main ]
   workflow_dispatch:  # Allow manual trigger
 
 jobs:
   build:
     strategy:
+      fail-fast: false  # Don't cancel other builds if one fails
       matrix:
-        os: [windows-latest, macos-latest, ubuntu-latest]
         include:
           - os: windows-latest
             executable_name: "WorkOrderExtractor.exe"
             artifact_name: "WorkOrderExtractor-Windows"
+            poppler_install: ""
           - os: macos-latest
             executable_name: "WorkOrderExtractor"
             artifact_name: "WorkOrderExtractor-macOS"
+            poppler_install: "brew install poppler"
           - os: ubuntu-latest
             executable_name: "WorkOrderExtractor"
             artifact_name: "WorkOrderExtractor-Linux"
+            poppler_install: "sudo apt-get update && sudo apt-get install -y poppler-utils"
 
     runs-on: ${{ matrix.os }}
     
     steps:
-    - uses: actions/checkout@v4
+    - name: Checkout code
+      uses: actions/checkout@v4
     
-    - name: Set up Python
+    - name: Set up Python 3.11
       uses: actions/setup-python@v4
       with:
         python-version: '3.11'
+        cache: 'pip'
     
-    - name: Install system dependencies (Ubuntu)
-      if: matrix.os == 'ubuntu-latest'
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y poppler-utils
-    
-    - name: Install system dependencies (macOS)
-      if: matrix.os == 'macos-latest'
-      run: |
-        brew install poppler
+    - name: Install system dependencies
+      if: matrix.poppler_install != ''
+      run: ${{ matrix.poppler_install }}
     
     - name: Install Python dependencies
       run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
+        python -m pip install --upgrade pip setuptools wheel
         pip install pyinstaller
+        pip install pdf2image pillow openai PyMuPDF
     
-    - name: Create requirements.txt if not exists
-      if: matrix.os == 'windows-latest'
+    - name: Test imports
       run: |
-        if not exist requirements.txt (
-          echo pdf2image > requirements.txt
-          echo pillow >> requirements.txt
-          echo openai >> requirements.txt
-          echo PyMuPDF >> requirements.txt
-        )
-      shell: cmd
+        python -c "import tkinter; print('tkinter OK')"
+        python -c "import pdf2image; print('pdf2image OK')"
+        python -c "import PIL; print('PIL OK')"
+        python -c "import openai; print('openai OK')"
     
-    - name: Create requirements.txt if not exists (Unix)
-      if: matrix.os != 'windows-latest'
-      run: |
-        if [ ! -f requirements.txt ]; then
-          cat > requirements.txt << EOF
-        pdf2image
-        pillow
-        openai
-        PyMuPDF
-        EOF
-        fi
-    
-    - name: Build executable with PyInstaller
+    - name: Build executable
       run: |
         pyinstaller --clean --onefile --windowed \
-          --name "${{ matrix.executable_name }}" \
-          --add-data "*.md:." \
+          --name "WorkOrderExtractor" \
           --hidden-import="PIL._tkinter_finder" \
+          --hidden-import="tkinter" \
+          --hidden-import="tkinter.ttk" \
+          --hidden-import="pdf2image" \
+          --hidden-import="openai" \
+          --add-data "*.md:." \
           work_order_extractor.py
     
-    - name: Create distribution folder
+    - name: Verify executable was created
+      shell: bash
+      run: |
+        ls -la dist/
+        if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+          ls -la dist/*.exe
+        else
+          ls -la dist/WorkOrderExtractor
+        fi
+    
+    - name: Create distribution package
       shell: bash
       run: |
         mkdir -p dist-package
         
         # Copy executable
         if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
-          cp dist/*.exe dist-package/
+          cp dist/WorkOrderExtractor.exe dist-package/
         else
-          cp dist/* dist-package/
+          cp dist/WorkOrderExtractor dist-package/
+          chmod +x dist-package/WorkOrderExtractor
         fi
         
-        # Copy documentation and sample files
-        cp README.md dist-package/ 2>/dev/null || echo "README.md not found"
-        cp CHANGELOG.md dist-package/ 2>/dev/null || echo "CHANGELOG.md not found"
+        # Copy documentation
         cp *.md dist-package/ 2>/dev/null || echo "No .md files found"
         
-        # Create sample folders structure
+        # Create sample folders
         mkdir -p dist-package/workOrderPDF
-        mkdir -p dist-package/workOrderRef
+        mkdir -p dist-package/workOrderRef  
         mkdir -p dist-package/not_match
         
         # Create sample config
-        cat > dist-package/config-sample.json << EOF
+        cat > dist-package/config-sample.json << 'EOF'
         {
           "openai_api_key": "your-api-key-here",
           "selected_model": "gpt-4.1-mini",
@@ -121,47 +113,44 @@ jobs:
         EOF
         
         # Create usage instructions
-        cat > dist-package/USAGE.txt << EOF
-        Work Order PDF Extractor - Usage Instructions
-        ============================================
+        cat > dist-package/README-USAGE.txt << 'EOF'
+        Work Order PDF Extractor - Quick Start
+        ====================================
         
-        1. First Run:
+        1. Setup:
            - Rename config-sample.json to config.json
-           - Add your OpenAI API key to config.json
-           - Place your PDF files in the workOrderPDF folder
-           - Place your reference CSV file in workOrderRef folder
+           - Edit config.json and add your OpenAI API key
         
-        2. Running the Application:
+        2. Prepare files:
+           - Put PDF files in workOrderPDF/ folder
+           - Put your reference CSV in workOrderRef/ folder
+        
+        3. Run:
            - Windows: Double-click WorkOrderExtractor.exe
-           - macOS/Linux: ./WorkOrderExtractor (may need chmod +x first)
+           - Mac/Linux: Open terminal, run ./WorkOrderExtractor
         
-        3. Features:
-           - Settings: Configure API key and model
-           - Manual Crop: Set crop region visually
-           - Process PDFs: Batch process with statistics
-           - Logs: View processing details
+        4. Use the app:
+           - Settings tab: Verify your API key and model
+           - Manual Crop tab: Set crop region if needed
+           - Process PDFs tab: Run batch processing
+           - Logs tab: View processing details
         
-        4. Folders:
-           - workOrderPDF: Input PDF files
-           - workOrderRef: Reference CSV file
-           - not_match: Files that couldn't be matched
-           - debug_crops: Debug crop images (auto-created)
-        
-        For support, check the documentation files included.
+        Need help? Check the included documentation files.
         EOF
-
-    - name: Create ZIP package
+    
+    - name: Create ZIP archive
       shell: bash
       run: |
         cd dist-package
         if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
-          7z a -tzip "../${{ matrix.artifact_name }}.zip" *
+          powershell Compress-Archive -Path * -DestinationPath "../${{ matrix.artifact_name }}.zip"
         else
           zip -r "../${{ matrix.artifact_name }}.zip" *
         fi
         cd ..
-
-    - name: Upload artifact
+        ls -la ${{ matrix.artifact_name }}.zip
+    
+    - name: Upload build artifact
       uses: actions/upload-artifact@v3
       with:
         name: ${{ matrix.artifact_name }}
@@ -171,15 +160,19 @@ jobs:
   create-release:
     needs: build
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    if: startsWith(github.ref, 'refs/tags/v')
     
     steps:
-    - uses: actions/checkout@v4
+    - name: Checkout code
+      uses: actions/checkout@v4
     
     - name: Download all artifacts
       uses: actions/download-artifact@v3
       with:
         path: artifacts
+    
+    - name: Display artifact structure
+      run: find artifacts -type f -name "*.zip"
     
     - name: Create Release
       id: create_release
@@ -187,39 +180,42 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        tag_name: ${{ github.ref_name || 'manual-release' }}
-        release_name: Work Order Extractor ${{ github.ref_name || 'Manual Build' }}
+        tag_name: ${{ github.ref_name }}
+        release_name: "Work Order Extractor ${{ github.ref_name }}"
         body: |
-          ## Work Order PDF Extractor Release
+          ## Work Order PDF Extractor ${{ github.ref_name }}
           
-          ### Features
-          - 📄 Batch PDF processing with OpenAI vision models
-          - ✂️ Manual crop region selection with real-time preview
-          - 📊 Match/not match statistics tracking
-          - ⚡ Concurrent processing for improved performance
-          - 💰 Cost tracking for API usage
+          ### 🚀 Features
+          - Batch PDF processing with OpenAI vision models
+          - Manual crop region selection with real-time preview  
+          - Match/not match statistics tracking
+          - Concurrent processing for improved performance
+          - Cost tracking for API usage
           
-          ### What's Included
-          - **Windows**: WorkOrderExtractor.exe + setup files
-          - **macOS**: WorkOrderExtractor binary + setup files  
-          - **Linux**: WorkOrderExtractor binary + setup files
+          ### 📦 Downloads
+          Choose your platform and download the ZIP file:
           
-          ### Quick Start
-          1. Download the ZIP for your platform
-          2. Extract and rename `config-sample.json` to `config.json`
-          3. Add your OpenAI API key to the config
-          4. Run the executable
+          - **Windows**: WorkOrderExtractor-Windows.zip
+          - **macOS**: WorkOrderExtractor-macOS.zip  
+          - **Linux**: WorkOrderExtractor-Linux.zip
           
-          ### Requirements
-          - OpenAI API key with vision model access
+          ### 🔧 Quick Setup
+          1. Download and extract the ZIP for your platform
+          2. Rename `config-sample.json` to `config.json`
+          3. Edit config.json and add your OpenAI API key
+          4. Place PDF files in `workOrderPDF/` folder
+          5. Run the executable
+          
+          ### 📋 Requirements
+          - OpenAI API key with GPT-4.1 vision access
           - PDF files to process
-          - Reference CSV file for matching
+          - Reference CSV file for work order matching
           
-          See USAGE.txt in each package for detailed instructions.
+          See README-USAGE.txt in each package for detailed instructions.
         draft: false
         prerelease: false
     
-    - name: Upload Windows Release Asset
+    - name: Upload Windows Release
       uses: actions/upload-release-asset@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -229,7 +225,7 @@ jobs:
         asset_name: WorkOrderExtractor-Windows.zip
         asset_content_type: application/zip
     
-    - name: Upload macOS Release Asset
+    - name: Upload macOS Release
       uses: actions/upload-release-asset@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -239,7 +235,7 @@ jobs:
         asset_name: WorkOrderExtractor-macOS.zip
         asset_content_type: application/zip
     
-    - name: Upload Linux Release Asset
+    - name: Upload Linux Release
       uses: actions/upload-release-asset@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

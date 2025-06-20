@@ -68,7 +68,8 @@ class WorkOrderExtractor:
             'crop_y2': 0.25,  # 1/4 of height
             'pdf_folder': 'workOrderPDF',
             'ref_csv_file': 'workOrderRef/MCAN_work_inprogress.csv',
-            'not_match_folder': 'not_match'
+            'not_match_folder': 'not_match',
+            'split_pages': False  # Default disabled
         }
         
         # Model pricing (USD per million tokens) - 2025 rates
@@ -512,6 +513,32 @@ class WorkOrderExtractor:
         ttk.Label(results_grid, textvariable=self.not_matched_count_var, 
                  foreground="#F39C12", font=("Arial", 9, "bold")).grid(row=1, column=4, sticky=tk.W, padx=5, pady=(5,0))
         
+        # PDF Processing Options section
+        options_frame = ttk.LabelFrame(process_frame, text="📄 Processing Options", padding=15)
+        options_frame.pack(fill=tk.X, padx=15, pady=10)
+        
+        # Split all pages option
+        split_frame = ttk.Frame(options_frame)
+        split_frame.pack(fill=tk.X, pady=5)
+        
+        self.split_pages_var = tk.BooleanVar(value=False)  # Default disabled
+        self.split_pages_checkbox = ttk.Checkbutton(
+            split_frame,
+            text="📑 Split all PDF pages into separate files before processing",
+            variable=self.split_pages_var,
+            command=self.on_split_pages_changed
+        )
+        self.split_pages_checkbox.pack(anchor=tk.W)
+        
+        # Description label
+        split_desc = ttk.Label(
+            split_frame,
+            text="When enabled, each page of multi-page PDFs will be extracted as a separate PDF file",
+            font=("Arial", 9),
+            foreground="#666666"
+        )
+        split_desc.pack(anchor=tk.W, padx=20, pady=(2, 0))
+
         # Enhanced control buttons with improved styling
         button_frame = ttk.Frame(process_frame)
         button_frame.pack(fill=tk.X, padx=15, pady=20)
@@ -736,6 +763,13 @@ class WorkOrderExtractor:
         self.update_model_description()
         self.log_message(f"Model changed to: {self.model_var.get()}")
     
+    def on_split_pages_changed(self):
+        """Handle split pages checkbox change"""
+        if self.split_pages_var.get():
+            self.log_message("PDF page splitting enabled - multi-page PDFs will be split into separate files")
+        else:
+            self.log_message("PDF page splitting disabled")
+    
     def update_model_description(self):
         """Update model description text"""
         model = self.model_var.get()
@@ -905,6 +939,8 @@ class WorkOrderExtractor:
                 self.y2_var.set(self.config.get('crop_y2', 0.25))
                 self.pdf_folder_var.set(self.config.get('pdf_folder', 'workOrderPDF'))
                 self.csv_file_var.set(self.config.get('ref_csv_file', 'workOrderRef/MCAN_work_inprogress.csv'))
+                if hasattr(self, 'split_pages_var'):
+                    self.split_pages_var.set(self.config.get('split_pages', False))
                 self.update_model_description()
         except Exception as e:
             self.logger.error(f"Error loading settings: {e}")
@@ -920,7 +956,8 @@ class WorkOrderExtractor:
                 'crop_x2': self.x2_var.get(),
                 'crop_y2': self.y2_var.get(),
                 'pdf_folder': self.pdf_folder_var.get(),
-                'ref_csv_file': self.csv_file_var.get()
+                'ref_csv_file': self.csv_file_var.get(),
+                'split_pages': self.split_pages_var.get() if hasattr(self, 'split_pages_var') else False
             })
             
             with open('config.json', 'w') as f:
@@ -1350,6 +1387,96 @@ class WorkOrderExtractor:
         
         return image.crop((left, top, right, bottom))
     
+    def split_pdf_pages(self, pdf_path: str, output_folder: str) -> List[str]:
+        """Split a multi-page PDF into separate PDF files using PyMuPDF"""
+        try:
+            if not HAS_PYMUPDF:
+                self.log_message("Warning: PyMuPDF not available, skipping page splitting")
+                return [pdf_path]  # Return original file if splitting not available
+            
+            # Open the PDF document
+            doc = fitz.open(pdf_path)
+            page_count = len(doc)
+            
+            # If PDF has only one page, no need to split
+            if page_count <= 1:
+                doc.close()
+                return [pdf_path]
+            
+            self.log_message(f"Splitting {os.path.basename(pdf_path)} into {page_count} pages")
+            
+            # Create output folder if it doesn't exist
+            os.makedirs(output_folder, exist_ok=True)
+            
+            split_files = []
+            base_filename = os.path.splitext(os.path.basename(pdf_path))[0]
+            
+            # Extract each page as a separate PDF
+            for page_num in range(page_count):
+                # Create a new document with just one page
+                new_doc = fitz.open()
+                new_doc.insert_pdf(doc, from_page=page_num, to_page=page_num)
+                
+                # Generate filename for the split page
+                page_filename = f"{base_filename}_page_{page_num + 1:03d}.pdf"
+                page_path = os.path.join(output_folder, page_filename)
+                
+                # Save the single-page PDF
+                new_doc.save(page_path)
+                new_doc.close()
+                
+                split_files.append(page_path)
+                self.log_message(f"Created: {page_filename}")
+            
+            doc.close()
+            
+            # Remove original multi-page file after successful splitting
+            try:
+                os.remove(pdf_path)
+                self.log_message(f"Removed original file: {os.path.basename(pdf_path)}")
+            except Exception as e:
+                self.log_message(f"Warning: Could not remove original file {os.path.basename(pdf_path)}: {e}")
+            
+            return split_files
+            
+        except Exception as e:
+            self.logger.error(f"Error splitting PDF {pdf_path}: {e}")
+            self.log_message(f"Error splitting PDF {os.path.basename(pdf_path)}: {e}")
+            return [pdf_path]  # Return original file if splitting fails
+    
+    def process_pdf_splitting(self, pdf_folder: str) -> List[str]:
+        """Process all PDFs in folder and split multi-page PDFs if enabled"""
+        try:
+            # Get all PDF files
+            all_files = [f for f in os.listdir(pdf_folder) if f.lower().endswith('.pdf')]
+            
+            if not self.split_pages_var.get():
+                # No splitting enabled, return paths to all files
+                return [os.path.join(pdf_folder, f) for f in all_files]
+            
+            self.log_message(f"Page splitting enabled - processing {len(all_files)} PDF files")
+            
+            all_processed_files = []
+            
+            # Create a temporary folder for split files within the PDF folder
+            split_folder = pdf_folder  # Keep split files in the same folder
+            
+            for filename in all_files:
+                file_path = os.path.join(pdf_folder, filename)
+                
+                # Split the PDF (returns list of file paths)
+                split_files = self.split_pdf_pages(file_path, split_folder)
+                all_processed_files.extend(split_files)
+            
+            self.log_message(f"Page splitting complete - total files to process: {len(all_processed_files)}")
+            return all_processed_files
+            
+        except Exception as e:
+            self.logger.error(f"Error in process_pdf_splitting: {e}")
+            self.log_message(f"Error during PDF splitting: {e}")
+            # Fallback to original file list
+            return [os.path.join(pdf_folder, f) for f in os.listdir(pdf_folder) if f.lower().endswith('.pdf')]
+    
     def test_crop(self):
         """Test crop settings on the first PDF"""
         try:
@@ -1695,7 +1822,8 @@ If not found, use null for that field."""
             'crop_x2': self.x2_var.get(),
             'crop_y2': self.y2_var.get(),
             'pdf_folder': self.pdf_folder_var.get(),
-            'ref_csv_file': self.csv_file_var.get()
+            'ref_csv_file': self.csv_file_var.get(),
+            'split_pages': self.split_pages_var.get()
         })
         
         # Reload reference data
@@ -1715,14 +1843,16 @@ If not found, use null for that field."""
         """Process all PDF files in the folder with concurrent processing"""
         try:
             pdf_folder = self.config['pdf_folder']
-            pdf_files = [f for f in os.listdir(pdf_folder) if f.lower().endswith('.pdf')]
             
-            if not pdf_files:
+            # Step 1: Handle PDF splitting if enabled
+            pdf_file_paths = self.process_pdf_splitting(pdf_folder)
+            
+            if not pdf_file_paths:
                 self.log_message("No PDF files found to process")
                 self.processing_complete()
                 return
             
-            self.log_message(f"Found {len(pdf_files)} PDF files to process")
+            self.log_message(f"Total PDF files to process: {len(pdf_file_paths)}")
             self.log_message(f"Using {self.max_concurrent_workers} concurrent workers for API calls")
             
             start_time = time.time()
@@ -1732,9 +1862,9 @@ If not found, use null for that field."""
                 # Submit all tasks
                 future_to_file = {
                     executor.submit(self.process_single_pdf, 
-                                   os.path.join(pdf_folder, filename), 
-                                   filename): filename 
-                    for filename in pdf_files
+                                   file_path, 
+                                   os.path.basename(file_path)): os.path.basename(file_path)
+                    for file_path in pdf_file_paths
                 }
                 
                 processed = 0
@@ -1786,21 +1916,21 @@ If not found, use null for that field."""
                     self.session_stats['files_processed'] += 1
                     
                     # Update progress
-                    progress = (processed / len(pdf_files)) * 100
+                    progress = (processed / len(pdf_file_paths)) * 100
                     self.progress_var.set(progress)
-                    self.status_var.set(f"Processed {processed}/{len(pdf_files)} files (Success: {successful}, Failed: {failed})")
+                    self.status_var.set(f"Processed {processed}/{len(pdf_file_paths)} files (Success: {successful}, Failed: {failed})")
                     self.root.update_idletasks()
                     
                     # Update results display
                     self.update_results_display()
                     
                     # Log progress every batch
-                    if processed % self.batch_size == 0 or processed == len(pdf_files):
+                    if processed % self.batch_size == 0 or processed == len(pdf_file_paths):
                         elapsed = time.time() - start_time
                         rate = processed / elapsed if elapsed > 0 else 0
-                        remaining = len(pdf_files) - processed
+                        remaining = len(pdf_file_paths) - processed
                         eta = remaining / rate if rate > 0 else 0
-                        self.log_message(f"Progress: {processed}/{len(pdf_files)} files ({rate:.1f} files/sec, ETA: {eta:.0f}s)")
+                        self.log_message(f"Progress: {processed}/{len(pdf_file_paths)} files ({rate:.1f} files/sec, ETA: {eta:.0f}s)")
             
             # Complete
             total_time = time.time() - start_time
